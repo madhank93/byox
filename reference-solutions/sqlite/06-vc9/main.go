@@ -187,13 +187,6 @@ func valueToString(v []byte, serialType int64) string {
 	return fmt.Sprintf("%d", decodeInt(v, serialType))
 }
 
-func parseWhereClause(s string) (column string, value string) {
-	parts := strings.SplitN(s, "=", 2)
-	column = strings.TrimSpace(parts[0])
-	value = strings.Trim(strings.TrimSpace(parts[1]), "'")
-	return
-}
-
 func splitOnKeyword(s, keyword string) (before string, after string) {
 	idx := strings.Index(strings.ToUpper(s), keyword)
 	if idx == -1 {
@@ -240,13 +233,7 @@ func main() {
 		for i := range columnNames {
 			columnNames[i] = strings.TrimSpace(columnNames[i])
 		}
-		tableName, wherePart := splitOnKeyword(fromPart, " WHERE ")
-
-		var whereCol, whereVal string
-		hasWhere := wherePart != ""
-		if hasWhere {
-			whereCol, whereVal = parseWhereClause(wherePart)
-		}
+		tableName := fromPart
 
 		schemaRows := readSchemaRecords(databaseFile, pageSize)
 		createSQL, rootPage := findTableSchema(schemaRows, tableName)
@@ -255,16 +242,9 @@ func main() {
 		for i, name := range columnNames {
 			colIdxs[i] = columnIndex(columns, name)
 		}
-		whereIdx := -1
-		if hasWhere {
-			whereIdx = columnIndex(columns, whereCol)
-		}
 
 		rows := readTableLeafRecords(databaseFile, rootPage, pageSize)
 		for _, r := range rows {
-			if hasWhere && valueToString(r.values[whereIdx], r.serialTypes[whereIdx]) != whereVal {
-				continue
-			}
 			values := make([]string, len(colIdxs))
 			for i, idx := range colIdxs {
 				values[i] = valueToString(r.values[idx], r.serialTypes[idx])
