@@ -11,3 +11,7 @@ entries:
     name: Build your own Git
     repo: https://github.com/codecrafters-io/build-your-own-git
     tester_repo: https://github.com/codecrafters-io/git-tester
+  - slug: dns-server
+    name: Build your own DNS server
+    repo: https://github.com/codecrafters-io/build-your-own-dns-server
+    tester_repo: https://github.com/codecrafters-io/dns-server-tester
