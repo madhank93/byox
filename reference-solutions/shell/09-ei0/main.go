@@ -13,7 +13,6 @@ var builtins = map[string]bool{
 	"echo": true,
 	"type": true,
 	"pwd":  true,
-	"cd":   true,
 }
 
 func isBuiltin(name string) bool {
@@ -44,14 +43,6 @@ func main() {
 			os.Exit(0)
 		case "echo":
 			fmt.Println(strings.Join(args, " "))
-		case "cd":
-			target := args[0]
-			if target == "~" {
-				target = os.Getenv("HOME")
-			}
-			if err := os.Chdir(target); err != nil {
-				fmt.Printf("cd: %s: No such file or directory\n", target)
-			}
 		case "pwd":
 			dir, _ := os.Getwd()
 			fmt.Println(dir)

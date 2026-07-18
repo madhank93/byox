@@ -46,9 +46,6 @@ func main() {
 			fmt.Println(strings.Join(args, " "))
 		case "cd":
 			target := args[0]
-			if target == "~" {
-				target = os.Getenv("HOME")
-			}
 			if err := os.Chdir(target); err != nil {
 				fmt.Printf("cd: %s: No such file or directory\n", target)
 			}
