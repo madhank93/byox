@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 )
 
 func main() {
@@ -28,10 +26,6 @@ func main() {
 		err = cmdHashObject(os.Args[2:])
 	case "ls-tree":
 		err = cmdLsTree(os.Args[2:])
-	case "write-tree":
-		err = cmdWriteTree()
-	case "commit-tree":
-		err = cmdCommitTree(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
@@ -221,132 +215,5 @@ func cmdLsTree(args []string) error {
 		}
 		fmt.Printf("%06s %s %s\t%s\n", e.mode, objType, e.sha, e.name)
 	}
-	return nil
-}
-
-func cmdWriteTree() error {
-	sha, err := writeTreeForDir(".")
-	if err != nil {
-		return err
-	}
-	fmt.Println(sha)
-	return nil
-}
-
-// writeTreeForDir recursively writes a tree object for dir and returns its SHA.
-func writeTreeForDir(dir string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", fmt.Errorf("reading dir %s: %w", dir, err)
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-
-	var buf bytes.Buffer
-	for _, e := range entries {
-		if e.Name() == ".git" {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		info, err := e.Info()
-		if err != nil {
-			return "", fmt.Errorf("stat %s: %w", path, err)
-		}
-		var mode string
-		var sha string
-		if e.IsDir() {
-			mode = "40000"
-			sha, err = writeTreeForDir(path)
-			if err != nil {
-				return "", err
-			}
-		} else if info.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(path)
-			if err != nil {
-				return "", fmt.Errorf("readlink %s: %w", path, err)
-			}
-			mode = "120000"
-			sha, err = writeObject("blob", []byte(target), true)
-			if err != nil {
-				return "", err
-			}
-		} else {
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return "", fmt.Errorf("reading %s: %w", path, err)
-			}
-			if info.Mode()&0111 != 0 {
-				mode = "100755"
-			} else {
-				mode = "100644"
-			}
-			sha, err = writeObject("blob", content, true)
-			if err != nil {
-				return "", err
-			}
-		}
-		shaBytes, err := hexToBytes(sha)
-		if err != nil {
-			return "", err
-		}
-		buf.WriteString(mode)
-		buf.WriteByte(' ')
-		buf.WriteString(e.Name())
-		buf.WriteByte(0)
-		buf.Write(shaBytes)
-	}
-	return writeObject("tree", buf.Bytes(), true)
-}
-
-func hexToBytes(s string) ([]byte, error) {
-	if len(s) != 40 {
-		return nil, fmt.Errorf("invalid sha %q", s)
-	}
-	out := make([]byte, 20)
-	for i := 0; i < 20; i++ {
-		b, err := strconv.ParseUint(s[i*2:i*2+2], 16, 8)
-		if err != nil {
-			return nil, fmt.Errorf("invalid sha %q: %w", s, err)
-		}
-		out[i] = byte(b)
-	}
-	return out, nil
-}
-
-func cmdCommitTree(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: mygit commit-tree <tree_sha> [-p <parent_sha>] -m <message>")
-	}
-	treeSha := args[0]
-	var parentSha, message string
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "-p":
-			i++
-			if i < len(args) {
-				parentSha = args[i]
-			}
-		case "-m":
-			i++
-			if i < len(args) {
-				message = args[i]
-			}
-		}
-	}
-
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "tree %s\n", treeSha)
-	if parentSha != "" {
-		fmt.Fprintf(&buf, "parent %s\n", parentSha)
-	}
-	const author = "John Doe <john@example.com> 1234567890 +0000"
-	fmt.Fprintf(&buf, "author %s\n", author)
-	fmt.Fprintf(&buf, "committer %s\n", author)
-	fmt.Fprintf(&buf, "\n%s\n", message)
-
-	sha, err := writeObject("commit", buf.Bytes(), true)
-	if err != nil {
-		return err
-	}
-	fmt.Println(sha)
 	return nil
 }

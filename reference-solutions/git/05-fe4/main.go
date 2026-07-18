@@ -30,8 +30,6 @@ func main() {
 		err = cmdLsTree(os.Args[2:])
 	case "write-tree":
 		err = cmdWriteTree()
-	case "commit-tree":
-		err = cmdCommitTree(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
@@ -310,43 +308,4 @@ func hexToBytes(s string) ([]byte, error) {
 		out[i] = byte(b)
 	}
 	return out, nil
-}
-
-func cmdCommitTree(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: mygit commit-tree <tree_sha> [-p <parent_sha>] -m <message>")
-	}
-	treeSha := args[0]
-	var parentSha, message string
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "-p":
-			i++
-			if i < len(args) {
-				parentSha = args[i]
-			}
-		case "-m":
-			i++
-			if i < len(args) {
-				message = args[i]
-			}
-		}
-	}
-
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "tree %s\n", treeSha)
-	if parentSha != "" {
-		fmt.Fprintf(&buf, "parent %s\n", parentSha)
-	}
-	const author = "John Doe <john@example.com> 1234567890 +0000"
-	fmt.Fprintf(&buf, "author %s\n", author)
-	fmt.Fprintf(&buf, "committer %s\n", author)
-	fmt.Fprintf(&buf, "\n%s\n", message)
-
-	sha, err := writeObject("commit", buf.Bytes(), true)
-	if err != nil {
-		return err
-	}
-	fmt.Println(sha)
-	return nil
 }
