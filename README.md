@@ -4,8 +4,8 @@ Complete [CodeCrafters](https://codecrafters.io) "Build your own X" courses **en
 A Bubble Tea TUI + engine (`byox`) drives the **official open-source course testers** — the exact same
 checks the real platform runs — with stage-by-stage progress tracking.
 
-Courses wired up: **Redis** (115 stages) and **HTTP server** (14 stages). Adding more is one
-entry in `courses.yml`.
+Courses wired up: **Redis** (115 stages), **HTTP server** (14 stages), and **Git** (7 stages).
+Adding more is one entry in `courses.yml`.
 
 ## Prerequisites
 
@@ -63,16 +63,19 @@ the cursor is in.
 ### Reference solutions
 
 Pressing `s` shows a reference solution for the selected stage. This repo ships
-**complete, tester-verified Go solutions for every stage** of both courses,
+**complete, tester-verified Go solutions for every stage** of these courses,
 authored in-repo under `reference-solutions/`:
 
 - **http-server**: all 14 stages ✓
 - **redis**: all 115 stages ✓ (full command set — RDB, AOF, replication,
   streams, transactions, lists, pub/sub, sorted sets, geospatial, ACL/AUTH)
+- **git**: all 7 stages ✓ (plumbing commands — init, cat-file, hash-object,
+  ls-tree, write-tree, commit-tree — plus cloning a real GitHub repo over the
+  Smart HTTP protocol, including packfile parsing and delta resolution)
 
 Each `reference-solutions/<course>/NN-slug/main.go` was verified by running the
 official CodeCrafters tester cumulatively (stages 1..N) against it. The
-authoring sources live in `reference-solutions/{redis,http-server}-work/`, and
+authoring sources live in `reference-solutions/{redis,http-server,git}-work/`, and
 `reference-solutions/verify.sh` / `snapshot.sh` reproduce the verification.
 `byox` reads these first, falling back to CodeCrafters' vendored free-stage
 solutions.
