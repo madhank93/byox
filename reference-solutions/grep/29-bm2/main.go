@@ -80,12 +80,12 @@ func main() {
 
 			outputLine := line
 			if colorAlways {
-				matches := findAllMatches(line, pattern)
-				if len(matches) == 0 {
+				start, end, ok := findMatch(line, pattern, 0)
+				if !ok {
 					continue
 				}
 				matchedAny = true
-				outputLine = highlightMatches(line, matches)
+				outputLine = highlightMatch(line, start, end)
 			} else {
 				ok, err := matchLine(line, pattern)
 				if err != nil {
@@ -438,18 +438,14 @@ func matchLine(line []byte, pattern string) (bool, error) {
 	return ok, nil
 }
 
-// highlightMatches wraps each matched span in line with ANSI bold-red escape sequences.
-func highlightMatches(line []byte, matches [][2]int) []byte {
+// highlightMatch wraps line[start:end] in ANSI bold-red escape sequences.
+func highlightMatch(line []byte, start, end int) []byte {
 	var buf bytes.Buffer
-	pos := 0
-	for _, m := range matches {
-		buf.Write(line[pos:m[0]])
-		buf.WriteString("\033[01;31m")
-		buf.Write(line[m[0]:m[1]])
-		buf.WriteString("\033[m")
-		pos = m[1]
-	}
-	buf.Write(line[pos:])
+	buf.Write(line[:start])
+	buf.WriteString("\033[01;31m")
+	buf.Write(line[start:end])
+	buf.WriteString("\033[m")
+	buf.Write(line[end:])
 	return buf.Bytes()
 }
 
