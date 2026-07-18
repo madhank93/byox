@@ -230,23 +230,15 @@ func parseArgs(line string) []string {
 			rest := line[i+1:]
 			if len(rest) > 0 && rest[0] == '{' {
 				if end := strings.IndexByte(rest, '}'); end != -1 {
-					if val := shellVars[rest[1:end]]; val != "" {
-						inArg = true
-						current.WriteString(val)
-					}
+					inArg = true
+					current.WriteString(shellVars[rest[1:end]])
 					i += 1 + end + 1
 					continue
 				}
 			}
 			if l := identLen(rest); l > 0 {
-				// An expansion that resolves to an empty string contributes
-				// nothing to the word — unlike a literal char, it must NOT
-				// mark inArg, or a word that's only "$unset" would wrongly
-				// survive as an empty argument instead of being dropped.
-				if val := shellVars[rest[:l]]; val != "" {
-					inArg = true
-					current.WriteString(val)
-				}
+				inArg = true
+				current.WriteString(shellVars[rest[:l]])
 				i += 1 + l
 			} else {
 				// Not a recognized $NAME or ${NAME} form — treat "$" literally.
