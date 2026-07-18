@@ -283,32 +283,17 @@ func longestCommonPrefix(strs []string) string {
 	return prefix
 }
 
-// findFileMatchesInCurrentDir returns paths matching word: entries in the
-// current directory if word has no "/", or entries in the directory named
-// by word's last "/"-separated component otherwise. Returned paths keep
-// word's own directory prefix (e.g. "path/to/f" -> "path/to/file.txt").
-func findFileMatchesInCurrentDir(word string) []string {
-	dirPrefix := ""
-	prefix := word
-	searchDir := "."
-	if idx := strings.LastIndex(word, "/"); idx >= 0 {
-		dirPrefix = word[:idx+1]
-		searchDir = dirPrefix
-		prefix = word[idx+1:]
-	}
-
-	entries, err := os.ReadDir(searchDir)
+// findFileMatchesInCurrentDir returns entry names in the current directory
+// that start with prefix.
+func findFileMatchesInCurrentDir(prefix string) []string {
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		return nil
 	}
 	var matches []string
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), prefix) {
-			name := e.Name()
-			if e.IsDir() {
-				name += "/"
-			}
-			matches = append(matches, dirPrefix+name)
+			matches = append(matches, e.Name())
 		}
 	}
 	return matches
@@ -370,10 +355,7 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				word := string(buf[lastSpace+1:])
 				matches := findFileMatchesInCurrentDir(word)
 				if len(matches) == 1 {
-					completed := matches[0]
-					if !strings.HasSuffix(completed, "/") {
-						completed += " "
-					}
+					completed := matches[0] + " "
 					newBuf := string(buf[:lastSpace+1]) + completed
 					for range buf {
 						fmt.Print("\b \b")

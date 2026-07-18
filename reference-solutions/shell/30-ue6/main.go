@@ -304,11 +304,7 @@ func findFileMatchesInCurrentDir(word string) []string {
 	var matches []string
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), prefix) {
-			name := e.Name()
-			if e.IsDir() {
-				name += "/"
-			}
-			matches = append(matches, dirPrefix+name)
+			matches = append(matches, dirPrefix+e.Name())
 		}
 	}
 	return matches
@@ -370,10 +366,7 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				word := string(buf[lastSpace+1:])
 				matches := findFileMatchesInCurrentDir(word)
 				if len(matches) == 1 {
-					completed := matches[0]
-					if !strings.HasSuffix(completed, "/") {
-						completed += " "
-					}
+					completed := matches[0] + " "
 					newBuf := string(buf[:lastSpace+1]) + completed
 					for range buf {
 						fmt.Print("\b \b")
