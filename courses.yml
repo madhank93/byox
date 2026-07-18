@@ -15,3 +15,7 @@ entries:
     name: Build your own DNS server
     repo: https://github.com/codecrafters-io/build-your-own-dns-server
     tester_repo: https://github.com/codecrafters-io/dns-server-tester
+  - slug: sqlite
+    name: Build your own SQLite
+    repo: https://github.com/codecrafters-io/build-your-own-sqlite
+    tester_repo: https://github.com/codecrafters-io/sqlite-tester
