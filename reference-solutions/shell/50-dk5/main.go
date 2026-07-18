@@ -44,62 +44,15 @@ var builtins = map[string]bool{
 	"jobs":     true,
 }
 
-// Job tracks one background command started with a trailing "&". Done is
-// closed by a dedicated goroutine once Cmd.Wait() returns, so the jobs
-// builtin can check for completion (and reap the zombie) without blocking.
+// Job tracks one background command started with a trailing "&".
 type Job struct {
 	Number  int
 	Cmd     *exec.Cmd
 	Command string
-	Done    chan struct{}
 }
 
 var jobs []*Job
-
-// nextJobNumber returns the next job number to assign: 1 if the table is
-// empty, otherwise one more than the highest number currently in use.
-// Numbers are recycled as jobs are reaped, so this can't be a monotonic
-// counter.
-func nextJobNumber() int {
-	max := 0
-	for _, j := range jobs {
-		if j.Number > max {
-			max = j.Number
-		}
-	}
-	return max + 1
-}
-
-// reapJobs checks every background job for completion, printing and
-// removing each one that has finished. Running jobs are only printed when
-// showRunning is true (the jobs builtin lists everything; the automatic
-// reap before each prompt only announces newly-finished jobs).
-func reapJobs(showRunning bool) {
-	var remaining []*Job
-	for i, j := range jobs {
-		status := "Running"
-		select {
-		case <-j.Done:
-			status = "Done"
-		default:
-		}
-		marker := " "
-		if i == len(jobs)-1 {
-			marker = "+"
-		} else if i == len(jobs)-2 {
-			marker = "-"
-		}
-		if status == "Running" {
-			if showRunning {
-				fmt.Printf("[%d]%s  %-24s%s &\n", j.Number, marker, status, j.Command)
-			}
-			remaining = append(remaining, j)
-		} else {
-			fmt.Printf("[%d]%s  %-24s%s\n", j.Number, marker, status, j.Command)
-		}
-	}
-	jobs = remaining
-}
+var nextJobNumber = 1
 
 func isBuiltin(name string) bool {
 	return builtins[name]
@@ -302,7 +255,15 @@ func runLine(line string) {
 			delete(completers, args[1])
 		}
 	case "jobs":
-		reapJobs(true)
+		for i, j := range jobs {
+			marker := " "
+			if i == len(jobs)-1 {
+				marker = "+"
+			} else if i == len(jobs)-2 {
+				marker = "-"
+			}
+			fmt.Printf("[%d]%s  %-24s%s\n", j.Number, marker, "Running", j.Command)
+		}
 	default:
 		path, err := exec.LookPath(command)
 		if err != nil {
@@ -319,13 +280,10 @@ func runLine(line string) {
 				fmt.Printf("%s: %v\n", command, err)
 				return
 			}
-			job := &Job{Number: nextJobNumber(), Cmd: cmd, Command: strings.Join(fields, " "), Done: make(chan struct{})}
+			job := &Job{Number: nextJobNumber, Cmd: cmd, Command: strings.Join(fields, " ")}
+			nextJobNumber++
 			jobs = append(jobs, job)
 			fmt.Printf("[%d] %d\n", job.Number, cmd.Process.Pid)
-			go func(j *Job) {
-				j.Cmd.Wait()
-				close(j.Done)
-			}(job)
 		} else {
 			cmd.Run()
 		}
@@ -560,7 +518,6 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		reapJobs(false)
 		fmt.Print("$ ")
 
 		line, ok := readLine(reader)
