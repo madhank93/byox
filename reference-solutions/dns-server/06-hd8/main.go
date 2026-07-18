@@ -103,26 +103,14 @@ func (q *dnsQuestion) encode() []byte {
 
 func decodeDomainName(buf []byte, offset int) (string, int) {
 	var labels []string
-	nextOffset := -1
 	for {
 		length := int(buf[offset])
-		if length&0xC0 == 0xC0 {
-			pointer := (length&^0xC0)<<8 | int(buf[offset+1])
-			if nextOffset == -1 {
-				nextOffset = offset + 2
-			}
-			offset = pointer
-			continue
-		}
 		offset++
 		if length == 0 {
 			break
 		}
 		labels = append(labels, string(buf[offset:offset+length]))
 		offset += length
-	}
-	if nextOffset == -1 {
-		nextOffset = offset
 	}
 	name := ""
 	for i, label := range labels {
@@ -131,7 +119,7 @@ func decodeDomainName(buf []byte, offset int) (string, int) {
 		}
 		name += label
 	}
-	return name, nextOffset
+	return name, offset
 }
 
 func decodeQuestion(buf []byte, offset int) (dnsQuestion, int) {
@@ -193,33 +181,19 @@ func main() {
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 
 		header := decodeHeader(buf[:size])
-		reqQdcount := binary.BigEndian.Uint16(buf[4:6])
-
-		var questions []dnsQuestion
-		offset := 12
-		for i := 0; i < int(reqQdcount); i++ {
-			var q dnsQuestion
-			q, offset = decodeQuestion(buf[:size], offset)
-			questions = append(questions, q)
+		question, _ := decodeQuestion(buf[:size], 12)
+		header.qdcount = 1
+		header.ancount = 1
+		answer := dnsAnswer{
+			name:  question.name,
+			rtype: 1,
+			class: 1,
+			ttl:   60,
+			rdata: []byte{8, 8, 8, 8},
 		}
-
-		header.qdcount = uint16(len(questions))
-		header.ancount = uint16(len(questions))
-
 		response := header.encode()
-		for _, q := range questions {
-			response = append(response, q.encode()...)
-		}
-		for _, q := range questions {
-			answer := dnsAnswer{
-				name:  q.name,
-				rtype: 1,
-				class: 1,
-				ttl:   60,
-				rdata: []byte{8, 8, 8, 8},
-			}
-			response = append(response, answer.encode()...)
-		}
+		response = append(response, question.encode()...)
+		response = append(response, answer.encode()...)
 
 		_, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
