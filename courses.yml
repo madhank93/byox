@@ -23,3 +23,7 @@ entries:
     name: Build your own grep
     repo: https://github.com/codecrafters-io/build-your-own-grep
     tester_repo: https://github.com/codecrafters-io/grep-tester
+  - slug: shell
+    name: Build your own Shell
+    repo: https://github.com/codecrafters-io/build-your-own-shell
+    tester_repo: https://github.com/codecrafters-io/shell-tester
