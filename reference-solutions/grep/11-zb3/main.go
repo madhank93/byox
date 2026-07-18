@@ -1,0 +1,216 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+// Usage: echo <input_text> | your_program.sh -E <pattern>
+func main() {
+	if len(os.Args) < 3 || os.Args[1] != "-E" {
+		fmt.Fprintf(os.Stderr, "usage: mygrep -E <pattern>\n")
+		os.Exit(2)
+	}
+
+	pattern := os.Args[2]
+
+	line, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: read input text: %v\n", err)
+		os.Exit(2)
+	}
+
+	ok, err := matchLine(line, pattern)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	if !ok {
+		os.Exit(1)
+	}
+}
+
+// charAtom matches a single byte of input.
+type charAtom interface {
+	matches(b byte) bool
+}
+
+type literalAtom struct{ ch byte }
+
+func (a literalAtom) matches(b byte) bool { return b == a.ch }
+
+type digitAtom struct{}
+
+func (digitAtom) matches(b byte) bool { return isDigit(b) }
+
+type wordAtom struct{}
+
+func (wordAtom) matches(b byte) bool { return isWordChar(b) }
+
+type anyAtom struct{}
+
+func (anyAtom) matches(b byte) bool { return true }
+
+type groupAtom struct {
+	chars  string
+	negate bool
+}
+
+func (g groupAtom) matches(b byte) bool {
+	contains := bytes.ContainsRune([]byte(g.chars), rune(b))
+	if g.negate {
+		return !contains
+	}
+	return contains
+}
+
+// node is a pattern element that attempts to match starting at pos, calling
+// cont with the position after the match. It backtracks (tries a different
+// way of matching itself) if cont returns false, and returns false itself
+// if no way of matching leads to an overall success.
+type node interface {
+	match(ctx *matchCtx, pos int, cont func(int) bool) bool
+}
+
+type matchCtx struct {
+	line []byte
+}
+
+// charNode matches a single charAtom against one byte of input.
+type charNode struct{ a charAtom }
+
+func (n charNode) match(ctx *matchCtx, pos int, cont func(int) bool) bool {
+	if pos < len(ctx.line) && n.a.matches(ctx.line[pos]) {
+		return cont(pos + 1)
+	}
+	return false
+}
+
+// quantifierNode repeats inner between min and max times (max == -1 means
+// unbounded), matching greedily and backtracking to fewer repetitions if
+// the continuation fails.
+type quantifierNode struct {
+	inner    node
+	min, max int
+}
+
+func (q quantifierNode) match(ctx *matchCtx, pos int, cont func(int) bool) bool {
+	return matchRepeat(q.inner, ctx, pos, 0, q.min, q.max, cont)
+}
+
+func matchRepeat(inner node, ctx *matchCtx, pos, count, min, max int, cont func(int) bool) bool {
+	if max < 0 || count < max {
+		if inner.match(ctx, pos, func(p int) bool {
+			return matchRepeat(inner, ctx, p, count+1, min, max, cont)
+		}) {
+			return true
+		}
+	}
+	if count >= min {
+		return cont(pos)
+	}
+	return false
+}
+
+func matchSeq(nodes []node, ctx *matchCtx, pos int, cont func(int) bool) bool {
+	if len(nodes) == 0 {
+		return cont(pos)
+	}
+	return nodes[0].match(ctx, pos, func(p int) bool {
+		return matchSeq(nodes[1:], ctx, p, cont)
+	})
+}
+
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
+}
+
+func isWordChar(b byte) bool {
+	return isDigit(b) || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
+}
+
+func parsePattern(pattern string) []node {
+	var nodes []node
+	i := 0
+	for i < len(pattern) {
+		var n node
+		switch {
+		case pattern[i] == '\\' && i+1 < len(pattern) && pattern[i+1] == 'd':
+			n = charNode{digitAtom{}}
+			i += 2
+		case pattern[i] == '\\' && i+1 < len(pattern) && pattern[i+1] == 'w':
+			n = charNode{wordAtom{}}
+			i += 2
+		case pattern[i] == '[':
+			end := i + 1
+			for end < len(pattern) && pattern[end] != ']' {
+				end++
+			}
+			inner := pattern[i+1 : end]
+			negate := strings.HasPrefix(inner, "^")
+			if negate {
+				inner = inner[1:]
+			}
+			n = charNode{groupAtom{chars: inner, negate: negate}}
+			i = end + 1
+		case pattern[i] == '.':
+			n = charNode{anyAtom{}}
+			i++
+		default:
+			n = charNode{literalAtom{ch: pattern[i]}}
+			i++
+		}
+
+		switch {
+		case i < len(pattern) && pattern[i] == '+':
+			n = quantifierNode{inner: n, min: 1, max: -1}
+			i++
+		case i < len(pattern) && pattern[i] == '?':
+			n = quantifierNode{inner: n, min: 0, max: 1}
+			i++
+		}
+
+		nodes = append(nodes, n)
+	}
+	return nodes
+}
+
+func matchAtomsAt(nodes []node, ctx *matchCtx, start int) bool {
+	return matchSeq(nodes, ctx, start, func(int) bool { return true })
+}
+
+func matchAtomsExactlyAt(nodes []node, ctx *matchCtx, start int) bool {
+	return matchSeq(nodes, ctx, start, func(p int) bool { return p == len(ctx.line) })
+}
+
+func matchLine(line []byte, pattern string) (bool, error) {
+	anchoredStart := strings.HasPrefix(pattern, "^")
+	if anchoredStart {
+		pattern = pattern[1:]
+	}
+	anchoredEnd := strings.HasSuffix(pattern, "$")
+	if anchoredEnd {
+		pattern = pattern[:len(pattern)-1]
+	}
+	nodes := parsePattern(pattern)
+	ctx := &matchCtx{line: line}
+
+	match := matchAtomsAt
+	if anchoredEnd {
+		match = matchAtomsExactlyAt
+	}
+
+	if anchoredStart {
+		return match(nodes, ctx, 0), nil
+	}
+	for start := 0; start <= len(line); start++ {
+		if match(nodes, ctx, start) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
