@@ -9,58 +9,43 @@ import (
 )
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
-//    or: your_program.sh -E <pattern> <file>...
+//    or: your_program.sh -E <pattern> <file>
 func main() {
 	if len(os.Args) < 3 || os.Args[1] != "-E" {
-		fmt.Fprintf(os.Stderr, "usage: mygrep -E <pattern> [file...]\n")
+		fmt.Fprintf(os.Stderr, "usage: mygrep -E <pattern> [file]\n")
 		os.Exit(2)
 	}
 
 	pattern := os.Args[2]
-	files := os.Args[3:]
-	searchingFiles := len(files) > 0
-	prefixWithFilename := len(files) > 1
+
+	searchingFile := len(os.Args) > 3
+	var input []byte
+	var err error
+	if searchingFile {
+		input, err = os.ReadFile(os.Args[3])
+	} else {
+		input, err = io.ReadAll(os.Stdin)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: read input text: %v\n", err)
+		os.Exit(2)
+	}
+	content := bytes.TrimSuffix(input, []byte("\n"))
+	lines := bytes.Split(content, []byte("\n"))
 
 	matchedAny := false
-
-	searchContent := func(content []byte, prefix string) {
-		lines := bytes.Split(bytes.TrimSuffix(content, []byte("\n")), []byte("\n"))
-		for _, line := range lines {
-			ok, err := matchLine(line, pattern)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(2)
-			}
-			if !ok {
-				continue
-			}
-			matchedAny = true
-			if searchingFiles {
-				if prefixWithFilename {
-					fmt.Printf("%s:%s\n", prefix, line)
-				} else {
-					fmt.Println(string(line))
-				}
-			}
-		}
-	}
-
-	if searchingFiles {
-		for _, file := range files {
-			content, err := os.ReadFile(file)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: read %s: %v\n", file, err)
-				os.Exit(2)
-			}
-			searchContent(content, file)
-		}
-	} else {
-		content, err := io.ReadAll(os.Stdin)
+	for _, line := range lines {
+		ok, err := matchLine(line, pattern)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: read input text: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(2)
 		}
-		searchContent(content, "")
+		if ok {
+			matchedAny = true
+			if searchingFile {
+				fmt.Println(string(line))
+			}
+		}
 	}
 
 	if !matchedAny {
