@@ -44,13 +44,8 @@ func parseArgs(line string) []string {
 			inArg = true
 			i++
 			for i < n && line[i] != '"' {
-				if line[i] == '\\' && i+1 < n && strings.ContainsRune(`"\$`+"`", rune(line[i+1])) {
-					current.WriteByte(line[i+1])
-					i += 2
-				} else {
-					current.WriteByte(line[i])
-					i++
-				}
+				current.WriteByte(line[i])
+				i++
 			}
 			i++
 		case c == '\\':

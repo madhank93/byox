@@ -40,27 +40,6 @@ func parseArgs(line string) []string {
 				i++
 			}
 			i++
-		case c == '"':
-			inArg = true
-			i++
-			for i < n && line[i] != '"' {
-				if line[i] == '\\' && i+1 < n && strings.ContainsRune(`"\$`+"`", rune(line[i+1])) {
-					current.WriteByte(line[i+1])
-					i += 2
-				} else {
-					current.WriteByte(line[i])
-					i++
-				}
-			}
-			i++
-		case c == '\\':
-			inArg = true
-			if i+1 < n {
-				current.WriteByte(line[i+1])
-				i += 2
-			} else {
-				i++
-			}
 		case c == ' ' || c == '\t':
 			if inArg {
 				args = append(args, current.String())
