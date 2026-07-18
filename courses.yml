@@ -7,3 +7,7 @@ entries:
     name: Build your own HTTP server
     repo: https://github.com/codecrafters-io/build-your-own-http-server
     tester_repo: https://github.com/codecrafters-io/http-server-tester
+  - slug: git
+    name: Build your own Git
+    repo: https://github.com/codecrafters-io/build-your-own-git
+    tester_repo: https://github.com/codecrafters-io/git-tester

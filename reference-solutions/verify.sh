@@ -8,6 +8,7 @@ course="$1"; dir="$2"; upto="$3"; from="${4:-1}"
 case "$course" in
   redis) tester="$ROOT/testers/redis-tester/dist/main.out"; stages="/tmp/redis_stages.tsv";;
   http-server) tester="$ROOT/testers/http-server-tester/dist/main.out"; stages="/tmp/http_stages.tsv";;
+  git) tester="$ROOT/testers/git-tester/dist/main.out"; stages="/tmp/git_stages.tsv";;
   *) echo "unknown course"; exit 2;;
 esac
 # build JSON array for stages 1..upto
