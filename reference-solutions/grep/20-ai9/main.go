@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -339,21 +338,6 @@ func parsePattern(pattern string, groupCount *int) []node {
 		case i < len(pattern) && pattern[i] == '*':
 			n = quantifierNode{inner: n, min: 0, max: -1}
 			i++
-		case i < len(pattern) && pattern[i] == '{':
-			end := strings.IndexByte(pattern[i:], '}') + i
-			inner := pattern[i+1 : end]
-			if commaIdx := strings.IndexByte(inner, ','); commaIdx >= 0 {
-				min, _ := strconv.Atoi(inner[:commaIdx])
-				max := -1
-				if commaIdx+1 < len(inner) {
-					max, _ = strconv.Atoi(inner[commaIdx+1:])
-				}
-				n = quantifierNode{inner: n, min: min, max: max}
-			} else {
-				count, _ := strconv.Atoi(inner)
-				n = quantifierNode{inner: n, min: count, max: count}
-			}
-			i = end + 1
 		}
 
 		nodes = append(nodes, n)

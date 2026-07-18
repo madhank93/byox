@@ -344,11 +344,7 @@ func parsePattern(pattern string, groupCount *int) []node {
 			inner := pattern[i+1 : end]
 			if commaIdx := strings.IndexByte(inner, ','); commaIdx >= 0 {
 				min, _ := strconv.Atoi(inner[:commaIdx])
-				max := -1
-				if commaIdx+1 < len(inner) {
-					max, _ = strconv.Atoi(inner[commaIdx+1:])
-				}
-				n = quantifierNode{inner: n, min: min, max: max}
+				n = quantifierNode{inner: n, min: min, max: -1}
 			} else {
 				count, _ := strconv.Atoi(inner)
 				n = quantifierNode{inner: n, min: count, max: count}
