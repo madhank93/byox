@@ -1,0 +1,67 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+// Usage: echo <input_text> | your_program.sh -E <pattern>
+func main() {
+	if len(os.Args) < 3 || os.Args[1] != "-E" {
+		fmt.Fprintf(os.Stderr, "usage: mygrep -E <pattern>\n")
+		os.Exit(2)
+	}
+
+	pattern := os.Args[2]
+
+	line, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: read input text: %v\n", err)
+		os.Exit(2)
+	}
+
+	ok, err := matchLine(line, pattern)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	if !ok {
+		os.Exit(1)
+	}
+}
+
+func matchLine(line []byte, pattern string) (bool, error) {
+	if pattern == `\d` {
+		for _, b := range line {
+			if isDigit(b) {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	if pattern == `\w` {
+		for _, b := range line {
+			if isWordChar(b) {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	if strings.HasPrefix(pattern, "[") && strings.HasSuffix(pattern, "]") {
+		chars := pattern[1 : len(pattern)-1]
+		return bytes.ContainsAny(line, chars), nil
+	}
+	return bytes.ContainsAny(line, pattern), nil
+}
+
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
+}
+
+func isWordChar(b byte) bool {
+	return isDigit(b) || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
+}

@@ -19,3 +19,7 @@ entries:
     name: Build your own SQLite
     repo: https://github.com/codecrafters-io/build-your-own-sqlite
     tester_repo: https://github.com/codecrafters-io/sqlite-tester
+  - slug: grep
+    name: Build your own grep
+    repo: https://github.com/codecrafters-io/build-your-own-grep
+    tester_repo: https://github.com/codecrafters-io/grep-tester
