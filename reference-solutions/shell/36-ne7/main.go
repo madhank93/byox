@@ -319,7 +319,18 @@ func findFileMatchesInCurrentDir(word string) []string {
 // characters, handling backspace, and completing on Tab.
 func readLine(reader *bufio.Reader) (string, bool) {
 	var buf []byte
-	lastTabPrefix := "" // prefix of the previous Tab press that had multiple matches, "" otherwise
+	// tabArmed/tabArmedFor track whether the previous keystroke was an
+	// ambiguous Tab press (multiple matches, bell rung) for this exact
+	// prefix, so a second Tab on the same prefix lists matches instead of
+	// ringing the bell again. A plain string sentinel can't tell "no
+	// previous ambiguous Tab" apart from "previous Tab was for an empty
+	// prefix" (both look like ""), so a separate bool is needed.
+	tabArmed := false
+	tabArmedFor := ""
+
+	disarmTab := func() {
+		tabArmed = false
+	}
 
 	for {
 		b, err := reader.ReadByte()
@@ -335,7 +346,7 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				buf = buf[:len(buf)-1]
 				fmt.Print("\b \b")
 			}
-			lastTabPrefix = ""
+			disarmTab()
 		case '\t':
 			lastSpace := strings.LastIndex(string(buf), " ")
 			if lastSpace == -1 {
@@ -358,13 +369,14 @@ func readLine(reader *bufio.Reader) (string, bool) {
 						}
 						buf = []byte(lcp)
 						fmt.Print(lcp)
-						lastTabPrefix = ""
-					} else if lastTabPrefix == string(buf) {
+						disarmTab()
+					} else if tabArmed && tabArmedFor == string(buf) {
 						fmt.Print("\r\n" + strings.Join(matches, "  ") + "\r\n$ " + string(buf))
-						lastTabPrefix = ""
+						disarmTab()
 					} else {
 						fmt.Print("\a")
-						lastTabPrefix = string(buf)
+						tabArmed = true
+						tabArmedFor = string(buf)
 					}
 				}
 			} else {
@@ -393,20 +405,21 @@ func readLine(reader *bufio.Reader) (string, bool) {
 						}
 						buf = []byte(newBuf)
 						fmt.Print(newBuf)
-						lastTabPrefix = ""
-					} else if lastTabPrefix == word {
+						disarmTab()
+					} else if tabArmed && tabArmedFor == word {
 						fmt.Print("\r\n" + strings.Join(matches, "  ") + "\r\n$ " + string(buf))
-						lastTabPrefix = ""
+						disarmTab()
 					} else {
 						fmt.Print("\a")
-						lastTabPrefix = word
+						tabArmed = true
+						tabArmedFor = word
 					}
 				}
 			}
 		default:
 			buf = append(buf, b)
 			fmt.Printf("%c", b)
-			lastTabPrefix = ""
+			disarmTab()
 		}
 	}
 }
