@@ -51,10 +51,6 @@ type wordAtom struct{}
 
 func (wordAtom) matches(b byte) bool { return isWordChar(b) }
 
-type anyAtom struct{}
-
-func (anyAtom) matches(b byte) bool { return true }
-
 type groupAtom struct {
 	chars  string
 	negate bool
@@ -157,9 +153,6 @@ func parsePattern(pattern string) []node {
 			}
 			n = charNode{groupAtom{chars: inner, negate: negate}}
 			i = end + 1
-		case pattern[i] == '.':
-			n = charNode{anyAtom{}}
-			i++
 		default:
 			n = charNode{literalAtom{ch: pattern[i]}}
 			i++

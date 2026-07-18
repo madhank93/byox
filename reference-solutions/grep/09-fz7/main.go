@@ -51,10 +51,6 @@ type wordAtom struct{}
 
 func (wordAtom) matches(b byte) bool { return isWordChar(b) }
 
-type anyAtom struct{}
-
-func (anyAtom) matches(b byte) bool { return true }
-
 type groupAtom struct {
 	chars  string
 	negate bool
@@ -157,20 +153,13 @@ func parsePattern(pattern string) []node {
 			}
 			n = charNode{groupAtom{chars: inner, negate: negate}}
 			i = end + 1
-		case pattern[i] == '.':
-			n = charNode{anyAtom{}}
-			i++
 		default:
 			n = charNode{literalAtom{ch: pattern[i]}}
 			i++
 		}
 
-		switch {
-		case i < len(pattern) && pattern[i] == '+':
+		if i < len(pattern) && pattern[i] == '+' {
 			n = quantifierNode{inner: n, min: 1, max: -1}
-			i++
-		case i < len(pattern) && pattern[i] == '?':
-			n = quantifierNode{inner: n, min: 0, max: 1}
 			i++
 		}
 
