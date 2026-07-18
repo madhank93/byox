@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -216,6 +215,20 @@ func runLine(line string) {
 	}
 }
 
+// completeBuiltin returns a completed builtin name (with a trailing space)
+// if prefix uniquely identifies the start of one.
+func completeBuiltin(prefix string) (string, bool) {
+	if prefix == "" {
+		return "", false
+	}
+	for _, name := range []string{"echo", "exit"} {
+		if strings.HasPrefix(name, prefix) {
+			return name + " ", true
+		}
+	}
+	return "", false
+}
+
 // findExecutableMatches returns the names of executables in PATH whose name
 // starts with prefix, deduplicated.
 func findExecutableMatches(prefix string) []string {
@@ -245,50 +258,22 @@ func findExecutableMatches(prefix string) []string {
 	return matches
 }
 
-// matchesFor returns every builtin/executable name matching prefix,
-// deduplicated and sorted alphabetically.
-func matchesFor(prefix string) []string {
-	if prefix == "" {
-		return nil
+// complete returns a completed command (with a trailing space) for prefix,
+// checking builtins first and then executables in PATH.
+func complete(prefix string) (string, bool) {
+	if completed, ok := completeBuiltin(prefix); ok {
+		return completed, true
 	}
-	seen := map[string]bool{}
-	var matches []string
-	for _, name := range []string{"echo", "exit"} {
-		if strings.HasPrefix(name, prefix) && !seen[name] {
-			seen[name] = true
-			matches = append(matches, name)
-		}
+	if matches := findExecutableMatches(prefix); len(matches) == 1 {
+		return matches[0] + " ", true
 	}
-	for _, name := range findExecutableMatches(prefix) {
-		if !seen[name] {
-			seen[name] = true
-			matches = append(matches, name)
-		}
-	}
-	sort.Strings(matches)
-	return matches
-}
-
-// longestCommonPrefix returns the longest prefix shared by every string in strs.
-func longestCommonPrefix(strs []string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	prefix := strs[0]
-	for _, s := range strs[1:] {
-		for !strings.HasPrefix(s, prefix) {
-			prefix = prefix[:len(prefix)-1]
-		}
-	}
-	return prefix
+	return "", false
 }
 
 // readLine reads one line of input in raw terminal mode, echoing typed
 // characters, handling backspace, and completing on Tab.
 func readLine(reader *bufio.Reader) (string, bool) {
 	var buf []byte
-	lastTabPrefix := "" // prefix of the previous Tab press that had multiple matches, "" otherwise
-
 	for {
 		b, err := reader.ReadByte()
 		if err != nil {
@@ -303,40 +288,19 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				buf = buf[:len(buf)-1]
 				fmt.Print("\b \b")
 			}
-			lastTabPrefix = ""
 		case '\t':
-			matches := matchesFor(string(buf))
-			switch len(matches) {
-			case 0:
-				fmt.Print("\a")
-			case 1:
-				completed := matches[0] + " "
+			if completed, ok := complete(string(buf)); ok {
 				for range buf {
 					fmt.Print("\b \b")
 				}
 				buf = []byte(completed)
 				fmt.Print(completed)
-			default:
-				lcp := longestCommonPrefix(matches)
-				if len(lcp) > len(buf) {
-					for range buf {
-						fmt.Print("\b \b")
-					}
-					buf = []byte(lcp)
-					fmt.Print(lcp)
-					lastTabPrefix = ""
-				} else if lastTabPrefix == string(buf) {
-					fmt.Print("\r\n" + strings.Join(matches, "  ") + "\r\n$ " + string(buf))
-					lastTabPrefix = ""
-				} else {
-					fmt.Print("\a")
-					lastTabPrefix = string(buf)
-				}
+			} else {
+				fmt.Print("\a")
 			}
 		default:
 			buf = append(buf, b)
 			fmt.Printf("%c", b)
-			lastTabPrefix = ""
 		}
 	}
 }

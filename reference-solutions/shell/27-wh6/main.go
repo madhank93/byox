@@ -269,20 +269,6 @@ func matchesFor(prefix string) []string {
 	return matches
 }
 
-// longestCommonPrefix returns the longest prefix shared by every string in strs.
-func longestCommonPrefix(strs []string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	prefix := strs[0]
-	for _, s := range strs[1:] {
-		for !strings.HasPrefix(s, prefix) {
-			prefix = prefix[:len(prefix)-1]
-		}
-	}
-	return prefix
-}
-
 // readLine reads one line of input in raw terminal mode, echoing typed
 // characters, handling backspace, and completing on Tab.
 func readLine(reader *bufio.Reader) (string, bool) {
@@ -317,15 +303,7 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				buf = []byte(completed)
 				fmt.Print(completed)
 			default:
-				lcp := longestCommonPrefix(matches)
-				if len(lcp) > len(buf) {
-					for range buf {
-						fmt.Print("\b \b")
-					}
-					buf = []byte(lcp)
-					fmt.Print(lcp)
-					lastTabPrefix = ""
-				} else if lastTabPrefix == string(buf) {
+				if lastTabPrefix == string(buf) {
 					fmt.Print("\r\n" + strings.Join(matches, "  ") + "\r\n$ " + string(buf))
 					lastTabPrefix = ""
 				} else {
