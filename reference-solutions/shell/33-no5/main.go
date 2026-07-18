@@ -384,16 +384,7 @@ func readLine(reader *bufio.Reader) (string, bool) {
 					buf = []byte(newBuf)
 					fmt.Print(newBuf)
 				default:
-					lcp := longestCommonPrefix(matches)
-					if len(lcp) > len(word) {
-						newBuf := string(buf[:lastSpace+1]) + lcp
-						for range buf {
-							fmt.Print("\b \b")
-						}
-						buf = []byte(newBuf)
-						fmt.Print(newBuf)
-						lastTabPrefix = ""
-					} else if lastTabPrefix == word {
+					if lastTabPrefix == word {
 						fmt.Print("\r\n" + strings.Join(matches, "  ") + "\r\n$ " + string(buf))
 						lastTabPrefix = ""
 					} else {

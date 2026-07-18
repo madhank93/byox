@@ -369,10 +369,7 @@ func readLine(reader *bufio.Reader) (string, bool) {
 			} else {
 				word := string(buf[lastSpace+1:])
 				matches := findFileMatchesInCurrentDir(word)
-				switch len(matches) {
-				case 0:
-					fmt.Print("\a")
-				case 1:
+				if len(matches) == 1 {
 					completed := matches[0]
 					if !strings.HasSuffix(completed, "/") {
 						completed += " "
@@ -383,23 +380,8 @@ func readLine(reader *bufio.Reader) (string, bool) {
 					}
 					buf = []byte(newBuf)
 					fmt.Print(newBuf)
-				default:
-					lcp := longestCommonPrefix(matches)
-					if len(lcp) > len(word) {
-						newBuf := string(buf[:lastSpace+1]) + lcp
-						for range buf {
-							fmt.Print("\b \b")
-						}
-						buf = []byte(newBuf)
-						fmt.Print(newBuf)
-						lastTabPrefix = ""
-					} else if lastTabPrefix == word {
-						fmt.Print("\r\n" + strings.Join(matches, "  ") + "\r\n$ " + string(buf))
-						lastTabPrefix = ""
-					} else {
-						fmt.Print("\a")
-						lastTabPrefix = word
-					}
+				} else if len(matches) == 0 {
+					fmt.Print("\a")
 				}
 			}
 		default:
