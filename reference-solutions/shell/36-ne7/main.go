@@ -47,9 +47,6 @@ func isBuiltin(name string) bool {
 	return builtins[name]
 }
 
-// completers maps a command name to its registered `complete -C` script path.
-var completers = map[string]string{}
-
 // parseArgs splits a command line into arguments, honoring single-quoted
 // spans (literal, no escaping) and collapsing unquoted whitespace.
 func parseArgs(line string) []string {
@@ -204,17 +201,6 @@ func runLine(line string) {
 			fmt.Printf("%s is %s\n", target, path)
 		} else {
 			fmt.Printf("%s: not found\n", target)
-		}
-	case "complete":
-		if len(args) >= 2 && args[0] == "-p" {
-			cmdName := args[1]
-			if path, ok := completers[cmdName]; ok {
-				fmt.Printf("complete -C '%s' %s\n", path, cmdName)
-			} else {
-				fmt.Printf("complete: %s: no completion specification\n", cmdName)
-			}
-		} else if len(args) >= 3 && args[0] == "-C" {
-			completers[args[2]] = args[1]
 		}
 	default:
 		path, err := exec.LookPath(command)
