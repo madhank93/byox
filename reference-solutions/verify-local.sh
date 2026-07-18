@@ -21,4 +21,5 @@ while IFS=$'\t' read -r n slug name; do
 done < "$stages"
 json+="]"
 CODECRAFTERS_REPOSITORY_DIR="$dir" CODECRAFTERS_SUBMISSION_DIR="$dir" \
-  CODECRAFTERS_TEST_CASES_JSON="$json" "$tester"
+  CODECRAFTERS_TEST_CASES_JSON="$json" TESTER_DIR="$ROOT/testers/${course}-tester" \
+  "$tester"
