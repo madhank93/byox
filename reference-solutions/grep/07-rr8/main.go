@@ -113,38 +113,18 @@ func matchAtomsAt(atoms []atom, line []byte, start int) bool {
 	return true
 }
 
-func matchAtomsExactlyAt(atoms []atom, line []byte, start int) bool {
-	pos := start
-	for _, a := range atoms {
-		if pos >= len(line) || !a.match(line[pos]) {
-			return false
-		}
-		pos++
-	}
-	return pos == len(line)
-}
-
 func matchLine(line []byte, pattern string) (bool, error) {
 	anchoredStart := strings.HasPrefix(pattern, "^")
 	if anchoredStart {
 		pattern = pattern[1:]
 	}
-	anchoredEnd := strings.HasSuffix(pattern, "$")
-	if anchoredEnd {
-		pattern = pattern[:len(pattern)-1]
-	}
 	atoms := parsePattern(pattern)
 
-	match := matchAtomsAt
-	if anchoredEnd {
-		match = matchAtomsExactlyAt
-	}
-
 	if anchoredStart {
-		return match(atoms, line, 0), nil
+		return matchAtomsAt(atoms, line, 0), nil
 	}
 	for start := 0; start <= len(line); start++ {
-		if match(atoms, line, start) {
+		if matchAtomsAt(atoms, line, start) {
 			return true, nil
 		}
 	}
