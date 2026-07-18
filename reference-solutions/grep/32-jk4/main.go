@@ -25,14 +25,6 @@ func collectFilesRecursive(root string) ([]string, error) {
 	return files, err
 }
 
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
-}
-
 // Usage: echo <input_text> | your_program.sh -E <pattern>
 //    or: your_program.sh [-r] -E <pattern> <file...>
 func main() {
@@ -47,14 +39,9 @@ func main() {
 		onlyMatching = true
 		args = args[1:]
 	}
-	colorEnabled := false
+	colorAlways := false
 	if len(args) > 0 && strings.HasPrefix(args[0], "--color=") {
-		switch strings.TrimPrefix(args[0], "--color=") {
-		case "always":
-			colorEnabled = true
-		case "auto":
-			colorEnabled = isTerminal(os.Stdout)
-		}
+		colorAlways = args[0] == "--color=always"
 		args = args[1:]
 	}
 	if len(args) < 2 || args[0] != "-E" {
@@ -92,7 +79,7 @@ func main() {
 			}
 
 			outputLine := line
-			if colorEnabled {
+			if colorAlways {
 				matches := findAllMatches(line, pattern)
 				if len(matches) == 0 {
 					continue
