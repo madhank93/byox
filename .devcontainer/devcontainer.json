@@ -1,0 +1,16 @@
+{
+  "name": "build-your-own-x",
+  "image": "mcr.microsoft.com/devcontainers/go:1-1.25-bookworm",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/mise:1": {}
+  },
+  "postCreateCommand": "mise trust --yes && mise install && mise exec -- just setup",
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go"]
+    }
+  },
+  "remoteEnv": {
+    "GOTOOLCHAIN": "auto"
+  }
+}

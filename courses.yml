@@ -1,0 +1,9 @@
+entries:
+  - slug: redis
+    name: Build your own Redis
+    repo: https://github.com/codecrafters-io/build-your-own-redis
+    tester_repo: https://github.com/codecrafters-io/redis-tester
+  - slug: http-server
+    name: Build your own HTTP server
+    repo: https://github.com/codecrafters-io/build-your-own-http-server
+    tester_repo: https://github.com/codecrafters-io/http-server-tester

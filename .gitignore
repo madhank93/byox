@@ -1,0 +1,8 @@
+/vendor/
+/testers/
+/bin/
+progress.json
+.DS_Store
+
+# authoring build artifacts
+reference-solutions/*-work/app/app
