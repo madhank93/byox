@@ -81,27 +81,17 @@ func parseArgs(line string) []string {
 }
 
 // extractRedirection pulls ">"/"1>" stdout and "2>" stderr redirect targets
-// (plus their ">>"/"1>>" append variants) out of tokens, returning the
-// remaining command tokens and the targets (empty if none was present).
-func extractRedirection(tokens []string) (cmd []string, stdoutFile string, stdoutAppend bool, stderrFile string, stderrAppend bool) {
+// out of tokens, returning the remaining command tokens and the targets
+// (empty if none was present).
+func extractRedirection(tokens []string) (cmd []string, stdoutFile, stderrFile string) {
 	i := 0
 	for i < len(tokens) {
 		switch tokens[i] {
 		case ">", "1>":
 			stdoutFile = tokens[i+1]
-			stdoutAppend = false
-			i += 2
-		case ">>", "1>>":
-			stdoutFile = tokens[i+1]
-			stdoutAppend = true
 			i += 2
 		case "2>":
 			stderrFile = tokens[i+1]
-			stderrAppend = false
-			i += 2
-		case "2>>":
-			stderrFile = tokens[i+1]
-			stderrAppend = true
 			i += 2
 		default:
 			cmd = append(cmd, tokens[i])
@@ -112,7 +102,7 @@ func extractRedirection(tokens []string) (cmd []string, stdoutFile string, stdou
 }
 
 func runLine(line string) {
-	fields, stdoutFile, stdoutAppend, stderrFile, stderrAppend := extractRedirection(parseArgs(line))
+	fields, stdoutFile, stderrFile := extractRedirection(parseArgs(line))
 	if len(fields) == 0 {
 		return
 	}
@@ -120,11 +110,7 @@ func runLine(line string) {
 	args := fields[1:]
 
 	if stdoutFile != "" {
-		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		if stdoutAppend {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-		}
-		f, err := os.OpenFile(stdoutFile, flags, 0644)
+		f, err := os.OpenFile(stdoutFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", stdoutFile, err)
 			return
@@ -135,11 +121,7 @@ func runLine(line string) {
 		defer func() { os.Stdout = prevStdout }()
 	}
 	if stderrFile != "" {
-		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		if stderrAppend {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-		}
-		f, err := os.OpenFile(stderrFile, flags, 0644)
+		f, err := os.OpenFile(stderrFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", stderrFile, err)
 			return
