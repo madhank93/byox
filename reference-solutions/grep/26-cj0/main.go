@@ -66,10 +66,12 @@ func main() {
 		lines := bytes.Split(bytes.TrimSuffix(content, []byte("\n")), []byte("\n"))
 		for _, line := range lines {
 			if onlyMatching {
-				for _, m := range findAllMatches(line, pattern) {
-					matchedAny = true
-					fmt.Println(string(line[m[0]:m[1]]))
+				start, end, ok := findMatch(line, pattern)
+				if !ok {
+					continue
 				}
+				matchedAny = true
+				fmt.Println(string(line[start:end]))
 				continue
 			}
 
@@ -374,7 +376,7 @@ func parsePattern(pattern string, groupCount *int) []node {
 
 // findMatch finds the first (leftmost) match of pattern in line, returning
 // the matched span [start, end).
-func findMatch(line []byte, pattern string, searchFrom int) (start, end int, ok bool) {
+func findMatch(line []byte, pattern string) (start, end int, ok bool) {
 	anchoredStart := strings.HasPrefix(pattern, "^")
 	if anchoredStart {
 		pattern = pattern[1:]
@@ -404,13 +406,10 @@ func findMatch(line []byte, pattern string, searchFrom int) (start, end int, ok 
 	}
 
 	if anchoredStart {
-		if searchFrom > 0 {
-			return 0, 0, false
-		}
 		e, matched := tryAt(0)
 		return 0, e, matched
 	}
-	for s := searchFrom; s <= len(line); s++ {
+	for s := 0; s <= len(line); s++ {
 		if e, matched := tryAt(s); matched {
 			return s, e, true
 		}
@@ -419,25 +418,6 @@ func findMatch(line []byte, pattern string, searchFrom int) (start, end int, ok 
 }
 
 func matchLine(line []byte, pattern string) (bool, error) {
-	_, _, ok := findMatch(line, pattern, 0)
+	_, _, ok := findMatch(line, pattern)
 	return ok, nil
-}
-
-// findAllMatches finds every non-overlapping match of pattern in line, in order.
-func findAllMatches(line []byte, pattern string) [][2]int {
-	var matches [][2]int
-	pos := 0
-	for pos <= len(line) {
-		start, end, ok := findMatch(line, pattern, pos)
-		if !ok {
-			break
-		}
-		matches = append(matches, [2]int{start, end})
-		if end == start {
-			pos = start + 1
-		} else {
-			pos = end
-		}
-	}
-	return matches
 }
