@@ -80,7 +80,7 @@ type capture struct{ start, end int }
 
 type matchCtx struct {
 	line   []byte
-	groups []capture // index 0 unused; indices 1..N are capture groups
+	group1 capture
 }
 
 // charNode matches a single charAtom against one byte of input.
@@ -128,22 +128,25 @@ func matchSeq(nodes []node, ctx *matchCtx, pos int, cont func(int) bool) bool {
 	})
 }
 
-// groupNode matches any one of its alternatives, e.g. (cat|dog). The matched
-// span is recorded as capture group `index` for \N backreferences to reuse.
+// groupNode matches any one of its alternatives, e.g. (cat|dog). If captures
+// is true, the matched span is recorded as capture group 1 for \1 to reuse.
 type groupNode struct {
-	index        int
+	captures     bool
 	alternatives [][]node
 }
 
 func (g groupNode) match(ctx *matchCtx, pos int, cont func(int) bool) bool {
 	for _, alt := range g.alternatives {
 		ok := matchSeq(alt, ctx, pos, func(end int) bool {
-			prev := ctx.groups[g.index]
-			ctx.groups[g.index] = capture{pos, end}
+			if !g.captures {
+				return cont(end)
+			}
+			prev := ctx.group1
+			ctx.group1 = capture{pos, end}
 			if cont(end) {
 				return true
 			}
-			ctx.groups[g.index] = prev
+			ctx.group1 = prev
 			return false
 		})
 		if ok {
@@ -153,11 +156,11 @@ func (g groupNode) match(ctx *matchCtx, pos int, cont func(int) bool) bool {
 	return false
 }
 
-// backreferenceNode matches whatever text capture group `index` last captured.
-type backreferenceNode struct{ index int }
+// backreferenceNode matches whatever text capture group 1 last captured.
+type backreferenceNode struct{}
 
-func (b backreferenceNode) match(ctx *matchCtx, pos int, cont func(int) bool) bool {
-	g := ctx.groups[b.index]
+func (backreferenceNode) match(ctx *matchCtx, pos int, cont func(int) bool) bool {
+	g := ctx.group1
 	if g.start < 0 {
 		return false
 	}
@@ -215,7 +218,7 @@ func isWordChar(b byte) bool {
 	return isDigit(b) || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
 }
 
-func parsePattern(pattern string, groupCount *int) []node {
+func parsePattern(pattern string, capturedOne *bool) []node {
 	var nodes []node
 	i := 0
 	for i < len(pattern) {
@@ -227,8 +230,8 @@ func parsePattern(pattern string, groupCount *int) []node {
 		case pattern[i] == '\\' && i+1 < len(pattern) && pattern[i+1] == 'w':
 			n = charNode{wordAtom{}}
 			i += 2
-		case pattern[i] == '\\' && i+1 < len(pattern) && pattern[i+1] >= '1' && pattern[i+1] <= '9':
-			n = backreferenceNode{index: int(pattern[i+1] - '0')}
+		case pattern[i] == '\\' && i+1 < len(pattern) && pattern[i+1] == '1':
+			n = backreferenceNode{}
 			i += 2
 		case pattern[i] == '[':
 			end := i + 1
@@ -248,13 +251,13 @@ func parsePattern(pattern string, groupCount *int) []node {
 		case pattern[i] == '(':
 			end := findMatchingParen(pattern, i)
 			inner := pattern[i+1 : end]
-			*groupCount++
-			index := *groupCount
+			captures := !*capturedOne
+			*capturedOne = true
 			var alternatives [][]node
 			for _, alt := range splitTopLevel(inner, '|') {
-				alternatives = append(alternatives, parsePattern(alt, groupCount))
+				alternatives = append(alternatives, parsePattern(alt, capturedOne))
 			}
-			n = groupNode{index: index, alternatives: alternatives}
+			n = groupNode{captures: captures, alternatives: alternatives}
 			i = end + 1
 		default:
 			n = charNode{literalAtom{ch: pattern[i]}}
@@ -292,13 +295,9 @@ func matchLine(line []byte, pattern string) (bool, error) {
 	if anchoredEnd {
 		pattern = pattern[:len(pattern)-1]
 	}
-	groupCount := 0
-	nodes := parsePattern(pattern, &groupCount)
-	groups := make([]capture, groupCount+1)
-	for i := range groups {
-		groups[i] = capture{-1, -1}
-	}
-	ctx := &matchCtx{line: line, groups: groups}
+	capturedOne := false
+	nodes := parsePattern(pattern, &capturedOne)
+	ctx := &matchCtx{line: line, group1: capture{-1, -1}}
 
 	match := matchAtomsAt
 	if anchoredEnd {
