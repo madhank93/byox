@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -185,20 +186,40 @@ func runCompleter(path, command, word, prevWord, line string) []string {
 	return strings.Split(trimmed, "\n")
 }
 
-// parseArgs splits a command line into arguments, honoring single-quoted
+// token is one word produced by parseArgs. Quoted is true if any part of
+// the word came from a quote or backslash escape — a quoted ">" or "|"
+// must never be treated as a redirection/pipe operator, only as literal
+// text, even though quote characters themselves aren't preserved in Text.
+type token struct {
+	Text   string
+	Quoted bool
+}
+
+// parseArgs splits a command line into tokens, honoring single-quoted
 // spans (literal, no escaping) and collapsing unquoted whitespace.
-func parseArgs(line string) []string {
-	var args []string
+func parseArgs(line string) []token {
+	var tokens []token
 	var current strings.Builder
 	inArg := false
+	quoted := false
 	i := 0
 	n := len(line)
+
+	flush := func() {
+		if inArg {
+			tokens = append(tokens, token{Text: current.String(), Quoted: quoted})
+			current.Reset()
+			inArg = false
+			quoted = false
+		}
+	}
 
 	for i < n {
 		c := line[i]
 		switch {
 		case c == '\'':
 			inArg = true
+			quoted = true
 			i++
 			for i < n && line[i] != '\'' {
 				current.WriteByte(line[i])
@@ -207,6 +228,7 @@ func parseArgs(line string) []string {
 			i++
 		case c == '"':
 			inArg = true
+			quoted = true
 			i++
 			for i < n && line[i] != '"' {
 				if line[i] == '\\' && i+1 < n && strings.ContainsRune(`"\$`+"`", rune(line[i+1])) {
@@ -220,6 +242,7 @@ func parseArgs(line string) []string {
 			i++
 		case c == '\\':
 			inArg = true
+			quoted = true
 			if i+1 < n {
 				current.WriteByte(line[i+1])
 				i += 2
@@ -255,11 +278,7 @@ func parseArgs(line string) []string {
 				i++
 			}
 		case c == ' ' || c == '\t':
-			if inArg {
-				args = append(args, current.String())
-				current.Reset()
-				inArg = false
-			}
+			flush()
 			i++
 		default:
 			inArg = true
@@ -267,50 +286,60 @@ func parseArgs(line string) []string {
 			i++
 		}
 	}
-	if inArg {
-		args = append(args, current.String())
-	}
-	return args
+	flush()
+	return tokens
 }
 
 // extractRedirection pulls ">"/"1>" stdout and "2>" stderr redirect targets
 // (plus their ">>"/"1>>" append variants) out of tokens, returning the
-// remaining command tokens and the targets (empty if none was present).
-func extractRedirection(tokens []string) (cmd []string, stdoutFile string, stdoutAppend bool, stderrFile string, stderrAppend bool) {
+// remaining command tokens (as plain strings — their quoted-ness no longer
+// matters once we know they're not operators) and the targets (empty if
+// none was present). A token only counts as an operator when it is both
+// the exact operator text AND unquoted (see the token.Quoted doc comment)
+// and is followed by an operand — a bare trailing ">" with nothing after
+// it falls through to being treated as a literal argument instead of
+// panicking on a missing operand.
+func extractRedirection(tokens []token) (cmd []string, stdoutFile string, stdoutAppend bool, stderrFile string, stderrAppend bool) {
 	i := 0
 	for i < len(tokens) {
-		switch tokens[i] {
-		case ">", "1>":
-			stdoutFile = tokens[i+1]
-			stdoutAppend = false
-			i += 2
-		case ">>", "1>>":
-			stdoutFile = tokens[i+1]
-			stdoutAppend = true
-			i += 2
-		case "2>":
-			stderrFile = tokens[i+1]
-			stderrAppend = false
-			i += 2
-		case "2>>":
-			stderrFile = tokens[i+1]
-			stderrAppend = true
-			i += 2
-		default:
-			cmd = append(cmd, tokens[i])
-			i++
+		t := tokens[i]
+		if !t.Quoted && i+1 < len(tokens) {
+			switch t.Text {
+			case ">", "1>":
+				stdoutFile = tokens[i+1].Text
+				stdoutAppend = false
+				i += 2
+				continue
+			case ">>", "1>>":
+				stdoutFile = tokens[i+1].Text
+				stdoutAppend = true
+				i += 2
+				continue
+			case "2>":
+				stderrFile = tokens[i+1].Text
+				stderrAppend = false
+				i += 2
+				continue
+			case "2>>":
+				stderrFile = tokens[i+1].Text
+				stderrAppend = true
+				i += 2
+				continue
+			}
 		}
+		cmd = append(cmd, t.Text)
+		i++
 	}
 	return
 }
 
 // splitPipeline splits tokens into the command segments of a pipeline,
 // breaking on unquoted "|" tokens.
-func splitPipeline(tokens []string) [][]string {
-	var segments [][]string
-	var current []string
+func splitPipeline(tokens []token) [][]token {
+	var segments [][]token
+	var current []token
 	for _, t := range tokens {
-		if t == "|" {
+		if t.Text == "|" && !t.Quoted {
 			segments = append(segments, current)
 			current = nil
 		} else {
@@ -321,17 +350,24 @@ func splitPipeline(tokens []string) [][]string {
 }
 
 // runPipeline connects each segment's stdout to the next segment's stdin
-// via an OS pipe, starting every external command before waiting on any of
-// them so they run concurrently. A builtin segment runs synchronously,
-// in-process, writing to its end of the pipe — safe because none of our
-// builtins read stdin, so there's nothing to run concurrently with.
-func runPipeline(segments [][]string) {
+// via an OS pipe. Every segment — external command or builtin — is started
+// without waiting for it to finish before moving on to the next segment:
+// an OS pipe's buffer is finite (~64KB), so a segment producing more
+// output than that would deadlock forever if the next segment (its
+// reader) hadn't started draining the pipe yet. Builtins run in their own
+// goroutine for the same reason, tracked by a WaitGroup instead of
+// exec.Cmd.Wait(); this is safe because none of our builtins read stdin,
+// so there's nothing for a concurrently-running builtin to race with.
+// Any redirection (">"/"2>"/etc.) inside a pipeline segment still applies
+// to that segment, same as it would outside a pipeline.
+func runPipeline(segments [][]token) {
 	n := len(segments)
-	cmds := make([]*exec.Cmd, 0, n)
+	var cmds []*exec.Cmd
+	var wg sync.WaitGroup
 	var stdin *os.File // read end of the previous segment's pipe, or nil for the first segment
 
 	for i, seg := range segments {
-		fields, _, _, _, _ := extractRedirection(seg)
+		fields, stdoutFile, stdoutAppend, stderrFile, stderrAppend := extractRedirection(seg)
 		if len(fields) == 0 {
 			return
 		}
@@ -346,16 +382,43 @@ func runPipeline(segments [][]string) {
 				return
 			}
 		}
+
 		out := io.Writer(os.Stdout)
 		if pipeWriter != nil {
 			out = pipeWriter
 		}
+		if stdoutFile != "" {
+			f, err := openRedirectTarget(stdoutFile, stdoutAppend)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", stdoutFile, err)
+				return
+			}
+			defer f.Close()
+			out = f
+		}
+		errOut := io.Writer(os.Stderr)
+		if stderrFile != "" {
+			f, err := openRedirectTarget(stderrFile, stderrAppend)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", stderrFile, err)
+				return
+			}
+			defer f.Close()
+			errOut = f
+		}
 
 		if isBuiltin(command) {
-			runBuiltin(command, args, out, os.Stderr)
-			if pipeWriter != nil {
-				pipeWriter.Close()
-			}
+			wg.Add(1)
+			go func(pw, prevStdin *os.File) {
+				defer wg.Done()
+				runBuiltin(command, args, out, errOut)
+				if pw != nil {
+					pw.Close()
+				}
+				if prevStdin != nil {
+					prevStdin.Close()
+				}
+			}(pipeWriter, stdin)
 		} else {
 			path, err := exec.LookPath(command)
 			if err != nil {
@@ -364,8 +427,8 @@ func runPipeline(segments [][]string) {
 			}
 			cmd := exec.Command(path, args...)
 			cmd.Args[0] = command
-			cmd.Stderr = os.Stderr
 			cmd.Stdout = out
+			cmd.Stderr = errOut
 			if stdin != nil {
 				cmd.Stdin = stdin
 			} else {
@@ -381,26 +444,37 @@ func runPipeline(segments [][]string) {
 			if pipeWriter != nil {
 				pipeWriter.Close()
 			}
+			if stdin != nil {
+				stdin.Close()
+			}
 			cmds = append(cmds, cmd)
 		}
 
-		if stdin != nil {
-			stdin.Close()
-		}
 		stdin = pipeReader
 	}
 
 	for _, cmd := range cmds {
 		cmd.Wait()
 	}
+	wg.Wait()
+}
+
+// openRedirectTarget opens path for a ">"/"2>" (truncate) or ">>"/"2>>"
+// (append) redirection, creating it if it doesn't exist.
+func openRedirectTarget(path string, appendMode bool) (*os.File, error) {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if appendMode {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+	}
+	return os.OpenFile(path, flags, 0644)
 }
 
 func runLine(line string) {
 	tokens := parseArgs(line)
 	background := false
-	if len(tokens) > 0 && tokens[len(tokens)-1] == "&" {
+	if last := len(tokens) - 1; last >= 0 && tokens[last].Text == "&" && !tokens[last].Quoted {
 		background = true
-		tokens = tokens[:len(tokens)-1]
+		tokens = tokens[:last]
 	}
 
 	segments := splitPipeline(tokens)
@@ -417,11 +491,7 @@ func runLine(line string) {
 	args := fields[1:]
 
 	if stdoutFile != "" {
-		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		if stdoutAppend {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-		}
-		f, err := os.OpenFile(stdoutFile, flags, 0644)
+		f, err := openRedirectTarget(stdoutFile, stdoutAppend)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", stdoutFile, err)
 			return
@@ -432,11 +502,7 @@ func runLine(line string) {
 		defer func() { os.Stdout = prevStdout }()
 	}
 	if stderrFile != "" {
-		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		if stderrAppend {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-		}
-		f, err := os.OpenFile(stderrFile, flags, 0644)
+		f, err := openRedirectTarget(stderrFile, stderrAppend)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", stderrFile, err)
 			return
@@ -464,7 +530,10 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 	case "echo":
 		fmt.Fprintln(out, strings.Join(args, " "))
 	case "cd":
-		target := args[0]
+		target := "~"
+		if len(args) >= 1 {
+			target = args[0]
+		}
 		if target == "~" {
 			target = os.Getenv("HOME")
 		}
@@ -475,6 +544,9 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 		dir, _ := os.Getwd()
 		fmt.Fprintln(out, dir)
 	case "type":
+		if len(args) < 1 {
+			return
+		}
 		target := args[0]
 		if isBuiltin(target) {
 			fmt.Fprintf(out, "%s is a shell builtin\n", target)
