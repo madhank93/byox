@@ -254,8 +254,6 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				}
 				buf = []byte(completed)
 				fmt.Print(completed)
-			} else {
-				fmt.Print("\a")
 			}
 		default:
 			buf = append(buf, b)
