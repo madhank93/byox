@@ -86,7 +86,15 @@ authored in-repo under `reference-solutions/`:
   redirection, raw-mode Tab completion and programmable completion,
   background jobs and pipelines, `history` with file persistence, and
   shell variables)
-- **interpreter**, **bittorrent**, **kafka**: in progress
+- **interpreter**: all 84 stages ✓ (a tree-walk Lox interpreter — scanner,
+  recursive-descent parser, evaluator, a static Resolver pass for correct
+  closure scoping, classes, and single inheritance with `super`)
+- **kafka**: all 25 stages ✓ (a hand-rolled Kafka broker — wire-protocol
+  request/response framing, ApiVersions, DescribeTopicPartitions, Fetch, and
+  Produce, including parsing the `__cluster_metadata` log's record-batch
+  format and reading/writing partition log segments on disk)
+- **bittorrent**: in progress (stages 1-9 verified; stage 10+ blocked by
+  this environment's network egress policy)
 
 Each `reference-solutions/<course>/NN-slug/main.go` was verified by running the
 official CodeCrafters tester cumulatively (stages 1..N) against it. The
