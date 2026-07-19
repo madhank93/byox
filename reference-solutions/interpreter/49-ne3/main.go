@@ -787,15 +787,7 @@ func (p *Parser) parseStatement() (Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		var elseBranch Stmt
-		if p.tokens[p.pos].Type == "ELSE" {
-			p.pos++
-			elseBranch, err = p.parseStatement()
-			if err != nil {
-				return nil, err
-			}
-		}
-		return IfStmt{condition, thenBranch, elseBranch}, nil
+		return IfStmt{condition, thenBranch, nil}, nil
 	}
 	if p.tokens[p.pos].Type == "LEFT_BRACE" {
 		p.pos++
