@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/madhan/byox/internal/course"
+	"github.com/madhan/byox/course"
 	"github.com/madhan/byox/internal/progress"
 	"github.com/madhan/byox/internal/runner"
 	"github.com/madhan/byox/internal/tui"

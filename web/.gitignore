@@ -1,0 +1,21 @@
+# build output
+dist/
+# generated types
+.astro/
+
+# generated catalog data (produced by `just gen` / `go run .` in web/gen)
+src/data/catalog.ts
+src/data/stage-details/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+
+# environment variables
+.env
+.env.production
+
+# macOS-specific files
+.DS_Store

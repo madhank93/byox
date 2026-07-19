@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/madhan/byox/internal/course"
+	"github.com/madhan/byox/course"
 )
 
 // Setup clones/updates course + tester repos, builds testers, and seeds

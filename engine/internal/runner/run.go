@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/madhan/byox/internal/course"
+	"github.com/madhan/byox/course"
 )
 
 // testCase mirrors the JSON the official codecrafters testers expect in

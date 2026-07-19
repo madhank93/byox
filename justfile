@@ -27,3 +27,11 @@ status: build
 # Rewind a course's progress pointer to a stage (code untouched)
 reset course stage: build
     {{byox}} reset {{course}} --stage {{stage}}
+
+# Regenerate the website's catalog data from courses.yml + reference-solutions/
+gen:
+    cd web/gen && go run .
+
+# Run the website locally (regenerates the catalog data first)
+web: gen
+    cd web && npm install && npm run dev
