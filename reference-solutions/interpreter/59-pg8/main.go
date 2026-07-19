@@ -1011,21 +1011,6 @@ func (p *Parser) parseFunctionDecl() (Stmt, error) {
 	if err := p.expectToken("LEFT_PAREN", "'(' after function name"); err != nil {
 		return nil, err
 	}
-	var params []string
-	if p.tokens[p.pos].Type != "RIGHT_PAREN" {
-		for {
-			if p.tokens[p.pos].Type != "IDENTIFIER" {
-				tok := p.tokens[p.pos]
-				return nil, fmt.Errorf("[line %d] Error at %s: Expect parameter name.", tok.Line, describeToken(tok))
-			}
-			params = append(params, p.tokens[p.pos].Lexeme)
-			p.pos++
-			if p.tokens[p.pos].Type != "COMMA" {
-				break
-			}
-			p.pos++
-		}
-	}
 	if err := p.expectToken("RIGHT_PAREN", "')' after parameters"); err != nil {
 		return nil, err
 	}
@@ -1036,7 +1021,7 @@ func (p *Parser) parseFunctionDecl() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return FunctionStmt{Name: name, Params: params, Body: body}, nil
+	return FunctionStmt{Name: name, Body: body}, nil
 }
 
 // parseVarDecl parses "var name [= initializer];", used both directly as
