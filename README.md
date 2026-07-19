@@ -75,6 +75,10 @@ authored in-repo under `reference-solutions/`:
 - **dns-server**: all 8 stages ✓ (UDP server, DNS header/question/answer
   encoding and parsing, RFC 1035 name-compression pointer resolution,
   multi-question packets, and a forwarding resolver)
+- **kafka**: all 25 stages ✓ (a hand-rolled Kafka broker — wire-protocol
+  request/response framing, ApiVersions, DescribeTopicPartitions, Fetch, and
+  Produce, including parsing the `__cluster_metadata` log's record-batch
+  format and reading/writing partition log segments on disk)
 
 Each `reference-solutions/<course>/NN-slug/main.go` was verified by running the
 official CodeCrafters tester cumulatively (stages 1..N) against it. The
