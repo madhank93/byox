@@ -45,11 +45,7 @@ func main() {
 		if len(errs) > 0 {
 			os.Exit(65)
 		}
-		expr, perr := NewParser(tokens).parseExpression()
-		if perr != nil {
-			fmt.Fprintln(os.Stderr, perr)
-			os.Exit(65)
-		}
+		expr := NewParser(tokens).parseExpression()
 		fmt.Println(expr.String())
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
@@ -63,7 +59,6 @@ type Token struct {
 	Type    string
 	Lexeme  string
 	Literal string
-	Line    int
 }
 
 var keywords = map[string]string{
@@ -97,10 +92,6 @@ func scanTokens(source string) ([]Token, []string) {
 	line := 1
 	i := 0
 
-	add := func(tokenType, lexeme, literal string) {
-		tokens = append(tokens, Token{tokenType, lexeme, literal, line})
-	}
-
 	// matchNext consumes source[i] if it equals want, advancing i; used for
 	// two-character operators like "==" that share a prefix with a
 	// one-character operator like "=".
@@ -117,56 +108,56 @@ func scanTokens(source string) ([]Token, []string) {
 		i++
 		switch c {
 		case '(':
-			add("LEFT_PAREN", "(", "null")
+			tokens = append(tokens, Token{"LEFT_PAREN", "(", "null"})
 		case ')':
-			add("RIGHT_PAREN", ")", "null")
+			tokens = append(tokens, Token{"RIGHT_PAREN", ")", "null"})
 		case '{':
-			add("LEFT_BRACE", "{", "null")
+			tokens = append(tokens, Token{"LEFT_BRACE", "{", "null"})
 		case '}':
-			add("RIGHT_BRACE", "}", "null")
+			tokens = append(tokens, Token{"RIGHT_BRACE", "}", "null"})
 		case ',':
-			add("COMMA", ",", "null")
+			tokens = append(tokens, Token{"COMMA", ",", "null"})
 		case '.':
-			add("DOT", ".", "null")
+			tokens = append(tokens, Token{"DOT", ".", "null"})
 		case '-':
-			add("MINUS", "-", "null")
+			tokens = append(tokens, Token{"MINUS", "-", "null"})
 		case '+':
-			add("PLUS", "+", "null")
+			tokens = append(tokens, Token{"PLUS", "+", "null"})
 		case ';':
-			add("SEMICOLON", ";", "null")
+			tokens = append(tokens, Token{"SEMICOLON", ";", "null"})
 		case '*':
-			add("STAR", "*", "null")
+			tokens = append(tokens, Token{"STAR", "*", "null"})
 		case '/':
 			if matchNext('/') {
 				for i < len(source) && source[i] != '\n' {
 					i++
 				}
 			} else {
-				add("SLASH", "/", "null")
+				tokens = append(tokens, Token{"SLASH", "/", "null"})
 			}
 		case '=':
 			if matchNext('=') {
-				add("EQUAL_EQUAL", "==", "null")
+				tokens = append(tokens, Token{"EQUAL_EQUAL", "==", "null"})
 			} else {
-				add("EQUAL", "=", "null")
+				tokens = append(tokens, Token{"EQUAL", "=", "null"})
 			}
 		case '!':
 			if matchNext('=') {
-				add("BANG_EQUAL", "!=", "null")
+				tokens = append(tokens, Token{"BANG_EQUAL", "!=", "null"})
 			} else {
-				add("BANG", "!", "null")
+				tokens = append(tokens, Token{"BANG", "!", "null"})
 			}
 		case '<':
 			if matchNext('=') {
-				add("LESS_EQUAL", "<=", "null")
+				tokens = append(tokens, Token{"LESS_EQUAL", "<=", "null"})
 			} else {
-				add("LESS", "<", "null")
+				tokens = append(tokens, Token{"LESS", "<", "null"})
 			}
 		case '>':
 			if matchNext('=') {
-				add("GREATER_EQUAL", ">=", "null")
+				tokens = append(tokens, Token{"GREATER_EQUAL", ">=", "null"})
 			} else {
-				add("GREATER", ">", "null")
+				tokens = append(tokens, Token{"GREATER", ">", "null"})
 			}
 		case ' ', '\t', '\r':
 			// ignored
@@ -186,7 +177,7 @@ func scanTokens(source string) ([]Token, []string) {
 			} else {
 				value := source[start:i]
 				i++ // consume closing quote
-				add("STRING", `"`+value+`"`, value)
+				tokens = append(tokens, Token{"STRING", `"` + value + `"`, value})
 			}
 		default:
 			if isDigit(c) {
@@ -206,7 +197,7 @@ func scanTokens(source string) ([]Token, []string) {
 				if !strings.Contains(literal, ".") {
 					literal += ".0"
 				}
-				add("NUMBER", lexeme, literal)
+				tokens = append(tokens, Token{"NUMBER", lexeme, literal})
 			} else if isAlpha(c) {
 				start := i - 1
 				for i < len(source) && isAlphaNumeric(source[i]) {
@@ -217,13 +208,13 @@ func scanTokens(source string) ([]Token, []string) {
 				if kw, ok := keywords[text]; ok {
 					tokenType = kw
 				}
-				add(tokenType, text, "null")
+				tokens = append(tokens, Token{tokenType, text, "null"})
 			} else {
 				errors = append(errors, fmt.Sprintf("[line %d] Error: Unexpected character: %c", line, c))
 			}
 		}
 	}
-	add("EOF", "", "null")
+	tokens = append(tokens, Token{"EOF", "", "null"})
 	return tokens, errors
 }
 
@@ -295,117 +286,65 @@ func NewParser(tokens []Token) *Parser {
 	return &Parser{tokens: tokens}
 }
 
-func (p *Parser) parseExpression() (Expr, error) {
-	return p.equality()
-}
-
-// binaryLevel implements one left-associative binary-operator precedence
-// level: parse one operand via next, then keep consuming (operator,
-// operand) pairs as long as the current token's type is one of types.
-func (p *Parser) binaryLevel(next func() (Expr, error), types ...string) (Expr, error) {
-	expr, err := next()
-	if err != nil {
-		return nil, err
-	}
-	for p.pos < len(p.tokens) {
-		t := p.tokens[p.pos].Type
-		matched := false
-		for _, want := range types {
-			if t == want {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			break
-		}
-		op := p.tokens[p.pos].Lexeme
-		p.pos++
-		right, err := next()
-		if err != nil {
-			return nil, err
-		}
-		expr = BinaryExpr{op, expr, right}
-	}
-	return expr, nil
-}
-
-// equality parses left-associative "=="/"!=", the loosest binary
-// precedence level, above comparison.
-func (p *Parser) equality() (Expr, error) {
-	return p.binaryLevel(p.comparison, "EQUAL_EQUAL", "BANG_EQUAL")
-}
-
-// comparison parses left-associative "<"/"<="/">"/">=", one level looser
-// than term.
-func (p *Parser) comparison() (Expr, error) {
-	return p.binaryLevel(p.term, "LESS", "LESS_EQUAL", "GREATER", "GREATER_EQUAL")
-}
-
-// term parses left-associative "+"/"-", one level looser than factor.
-func (p *Parser) term() (Expr, error) {
-	return p.binaryLevel(p.factor, "PLUS", "MINUS")
+func (p *Parser) parseExpression() Expr {
+	return p.factor()
 }
 
 // factor parses left-associative "*"/"/" at the tightest binary precedence
 // level, above unary.
-func (p *Parser) factor() (Expr, error) {
-	return p.binaryLevel(p.unary, "STAR", "SLASH")
+func (p *Parser) factor() Expr {
+	expr := p.unary()
+	for p.pos < len(p.tokens) {
+		t := p.tokens[p.pos].Type
+		if t != "STAR" && t != "SLASH" {
+			break
+		}
+		op := p.tokens[p.pos].Lexeme
+		p.pos++
+		right := p.unary()
+		expr = BinaryExpr{op, expr, right}
+	}
+	return expr
 }
 
 // unary parses "!"/"-" prefix operators, which are right-associative
 // (they recurse into another unary rather than falling straight to
 // primary, so "!!true" parses as "(! (! true))").
-func (p *Parser) unary() (Expr, error) {
+func (p *Parser) unary() Expr {
 	tok := p.tokens[p.pos]
 	if tok.Type == "BANG" || tok.Type == "MINUS" {
 		p.pos++
-		right, err := p.unary()
-		if err != nil {
-			return nil, err
-		}
-		return UnaryExpr{tok.Lexeme, right}, nil
+		right := p.unary()
+		return UnaryExpr{tok.Lexeme, right}
 	}
 	return p.primary()
 }
 
-func (p *Parser) primary() (Expr, error) {
+func (p *Parser) primary() Expr {
 	tok := p.tokens[p.pos]
 	switch tok.Type {
 	case "TRUE":
 		p.pos++
-		return LiteralExpr{"true"}, nil
+		return LiteralExpr{"true"}
 	case "FALSE":
 		p.pos++
-		return LiteralExpr{"false"}, nil
+		return LiteralExpr{"false"}
 	case "NIL":
 		p.pos++
-		return LiteralExpr{"nil"}, nil
+		return LiteralExpr{"nil"}
 	case "NUMBER":
 		p.pos++
-		return LiteralExpr{tok.Literal}, nil
+		return LiteralExpr{tok.Literal}
 	case "STRING":
 		p.pos++
-		return LiteralExpr{tok.Literal}, nil
+		return LiteralExpr{tok.Literal}
 	case "LEFT_PAREN":
 		p.pos++
-		inner, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
+		inner := p.parseExpression()
 		if p.pos < len(p.tokens) && p.tokens[p.pos].Type == "RIGHT_PAREN" {
 			p.pos++
 		}
-		return GroupingExpr{inner}, nil
+		return GroupingExpr{inner}
 	}
-	return nil, fmt.Errorf("[line %d] Error at %s: Expect expression.", tok.Line, describeToken(tok))
-}
-
-// describeToken formats a token for a parse error message: "'lexeme'", or
-// "end" for EOF, matching the book's error format.
-func describeToken(tok Token) string {
-	if tok.Type == "EOF" {
-		return "end"
-	}
-	return "'" + tok.Lexeme + "'"
+	return nil
 }
