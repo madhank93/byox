@@ -116,6 +116,8 @@ type model struct {
 	watcher     *fsnotify.Watcher
 	watchedSlug string
 
+	solutionFull bool // 's' view: diff against previous stage (false) or full file (true)
+
 	err error
 }
 
@@ -300,6 +302,7 @@ func (m *model) ensureViewport() {
 
 func (m *model) showDesc() {
 	m.mode = modeDesc
+	m.solutionFull = false
 	if len(m.rows) == 0 {
 		m.rightVP.SetContent(helpStyle.Render("run `just setup` first"))
 		m.descKey = ""
@@ -372,8 +375,24 @@ func (m *model) solutionFile(ci, stageIdx int) (string, bool) {
 	return "", false
 }
 
-// showSolution renders the reference solution for the cursor's stage
-// into the right pane as fenced Go code.
+// previousSolutionFile returns the solution file for the nearest earlier
+// stage in the same course that has one. Reference solutions are
+// cumulative — each stage's main.go is the full program through that
+// stage — so diffing against the previous stage's file is what isolates
+// "the solution for this stage" rather than everything before it too.
+func (m *model) previousSolutionFile(ci, stageIdx int) (string, bool) {
+	for idx := stageIdx - 1; idx >= 0; idx-- {
+		if p, ok := m.solutionFile(ci, idx); ok {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// showSolution renders the reference solution for the cursor's stage into
+// the right pane. By default it shows only what changed since the
+// previous stage's solution (the reference files are cumulative full
+// programs, not per-stage diffs); `f` toggles to the full file.
 func (m *model) showSolution() {
 	m.mode = modeSolution
 	m.descKey = ""
@@ -396,9 +415,159 @@ func (m *model) showSolution() {
 		m.rightVP.SetContent(m.renderMD("error reading solution: " + err.Error()))
 		return
 	}
-	md := "### Reference solution\n\n`" + filepath.Base(path) + "`\n\n```go\n" + string(data) + "\n```"
+	content := string(data)
+	base := filepath.Base(path)
+
+	if m.solutionFull {
+		md := "### Reference solution — full file\n\n`" + base + "`\n\n```go\n" + content + "\n```"
+		m.rightVP.SetContent(m.renderMD(md))
+		m.rightVP.GotoTop()
+		return
+	}
+
+	prevPath, prevOK := m.previousSolutionFile(r.course, r.stage)
+	if !prevOK {
+		md := "### Reference solution\n\n`" + base + "`  ·  first vendored stage for this course\n\n```go\n" + content + "\n```"
+		m.rightVP.SetContent(m.renderMD(md))
+		m.rightVP.GotoTop()
+		return
+	}
+	prevData, err := os.ReadFile(prevPath)
+	if err != nil {
+		md := "### Reference solution\n\n`" + base + "`\n\n```go\n" + content + "\n```"
+		m.rightVP.SetContent(m.renderMD(md))
+		m.rightVP.GotoTop()
+		return
+	}
+	if string(prevData) == content {
+		md := "### Reference solution\n\nNo code changes for this stage — `" + base +
+			"` is identical to the previous stage's solution. This stage's work is in " +
+			"the tests/behavior, not new code.\n\nPress `f` to see the full file anyway."
+		m.rightVP.SetContent(m.renderMD(md))
+		m.rightVP.GotoTop()
+		return
+	}
+	diff := formatDiff(diffLines(strings.Split(string(prevData), "\n"), strings.Split(content, "\n")))
+	md := "### Reference solution — changes for this stage\n\n`" + base + "`\n\n```diff\n" + diff + "\n```"
 	m.rightVP.SetContent(m.renderMD(md))
 	m.rightVP.GotoTop()
+}
+
+// diffOp is one line of a line-level edit script: ' ' unchanged, '-'
+// present only in old, '+' present only in new.
+type diffOp struct {
+	kind byte
+	text string
+}
+
+// diffLines computes a minimal line-level edit script from old to new via
+// a standard LCS dynamic program. Reference solutions here top out
+// around a couple thousand lines, so the O(n·m) table is cheap enough to
+// build on demand for a single keypress.
+func diffLines(old, new []string) []diffOp {
+	n, m := len(old), len(new)
+	dp := make([][]int, n+1)
+	for i := range dp {
+		dp[i] = make([]int, m+1)
+	}
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			if old[i] == new[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else if dp[i+1][j] >= dp[i][j+1] {
+				dp[i][j] = dp[i+1][j]
+			} else {
+				dp[i][j] = dp[i][j+1]
+			}
+		}
+	}
+	var ops []diffOp
+	i, j := 0, 0
+	for i < n && j < m {
+		switch {
+		case old[i] == new[j]:
+			ops = append(ops, diffOp{' ', old[i]})
+			i++
+			j++
+		case dp[i+1][j] >= dp[i][j+1]:
+			ops = append(ops, diffOp{'-', old[i]})
+			i++
+		default:
+			ops = append(ops, diffOp{'+', new[j]})
+			j++
+		}
+	}
+	for ; i < n; i++ {
+		ops = append(ops, diffOp{'-', old[i]})
+	}
+	for ; j < m; j++ {
+		ops = append(ops, diffOp{'+', new[j]})
+	}
+	return ops
+}
+
+// diffContext is how many unchanged lines to keep around each change when
+// formatting a diff, matching the readability of a typical unified diff.
+const diffContext = 2
+
+// formatDiff renders an edit script as unified-diff-style text (a leading
+// "+"/"-"/" " per line, no hunk headers), collapsing long unchanged runs
+// down to a short elision marker so the output stays focused on what
+// actually changed.
+func formatDiff(ops []diffOp) string {
+	var out []string
+	n := len(ops)
+	for i := 0; i < n; {
+		if ops[i].kind != ' ' {
+			out = append(out, string(ops[i].kind)+ops[i].text)
+			i++
+			continue
+		}
+		j := i
+		for j < n && ops[j].kind == ' ' {
+			j++
+		}
+		runLen := j - i
+		atStart, atEnd := i == 0, j == n
+		switch {
+		case atStart && atEnd:
+			for k := i; k < j; k++ {
+				out = append(out, " "+ops[k].text)
+			}
+		case atStart:
+			skip := runLen - diffContext
+			start := i
+			if skip > 0 {
+				out = append(out, fmt.Sprintf(" … %d unchanged lines …", skip))
+				start = j - diffContext
+			}
+			for k := start; k < j; k++ {
+				out = append(out, " "+ops[k].text)
+			}
+		case atEnd:
+			show := min(diffContext, runLen)
+			for k := i; k < i+show; k++ {
+				out = append(out, " "+ops[k].text)
+			}
+			if runLen > show {
+				out = append(out, fmt.Sprintf(" … %d unchanged lines …", runLen-show))
+			}
+		case runLen <= diffContext*2:
+			for k := i; k < j; k++ {
+				out = append(out, " "+ops[k].text)
+			}
+		default:
+			for k := i; k < i+diffContext; k++ {
+				out = append(out, " "+ops[k].text)
+			}
+			out = append(out, fmt.Sprintf(" … %d unchanged lines …", runLen-diffContext*2))
+			for k := j - diffContext; k < j; k++ {
+				out = append(out, " "+ops[k].text)
+			}
+		}
+		i = j
+	}
+	return strings.Join(out, "\n")
 }
 
 func (m *model) renderMD(md string) string {
@@ -680,6 +849,11 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if !m.running {
 			m.showSolution()
 		}
+	case "f":
+		if m.mode == modeSolution {
+			m.solutionFull = !m.solutionFull
+			m.showSolution()
+		}
 	case "esc":
 		switch {
 		case (m.mode == modeLog || m.mode == modeSolution) && !m.running:
@@ -926,8 +1100,10 @@ func (m *model) rightView() string {
 		} else {
 			title = failStyle.Render("FAIL ✗ fix and save to retest (esc → instructions)")
 		}
+	case m.mode == modeSolution && m.solutionFull:
+		title = runStyle.Render("⚠ reference solution · full file — esc/s back · f changes only")
 	case m.mode == modeSolution:
-		title = runStyle.Render("⚠ reference solution — esc/s to return")
+		title = runStyle.Render("⚠ reference solution · changes for this stage — esc/s back · f full file")
 	case len(m.rows) > 0:
 		r := m.rows[m.cursor]
 		item := m.courses[r.course]
