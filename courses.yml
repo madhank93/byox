@@ -3,22 +3,30 @@ entries:
     name: Build your own Redis
     repo: https://github.com/codecrafters-io/build-your-own-redis
     tester_repo: https://github.com/codecrafters-io/redis-tester
-  - slug: http-server
-    name: Build your own HTTP server
-    repo: https://github.com/codecrafters-io/build-your-own-http-server
-    tester_repo: https://github.com/codecrafters-io/http-server-tester
+  - slug: interpreter
+    name: Build your own Interpreter
+    repo: https://github.com/codecrafters-io/build-your-own-interpreter
+    tester_repo: https://github.com/codecrafters-io/interpreter-tester
   - slug: git
     name: Build your own Git
     repo: https://github.com/codecrafters-io/build-your-own-git
     tester_repo: https://github.com/codecrafters-io/git-tester
-  - slug: dns-server
-    name: Build your own DNS server
-    repo: https://github.com/codecrafters-io/build-your-own-dns-server
-    tester_repo: https://github.com/codecrafters-io/dns-server-tester
   - slug: sqlite
     name: Build your own SQLite
     repo: https://github.com/codecrafters-io/build-your-own-sqlite
     tester_repo: https://github.com/codecrafters-io/sqlite-tester
+  - slug: dns-server
+    name: Build your own DNS server
+    repo: https://github.com/codecrafters-io/build-your-own-dns-server
+    tester_repo: https://github.com/codecrafters-io/dns-server-tester
+  - slug: http-server
+    name: Build your own HTTP server
+    repo: https://github.com/codecrafters-io/build-your-own-http-server
+    tester_repo: https://github.com/codecrafters-io/http-server-tester
+  - slug: bittorrent
+    name: Build your own BitTorrent
+    repo: https://github.com/codecrafters-io/build-your-own-bittorrent
+    tester_repo: https://github.com/codecrafters-io/bittorrent-tester
   - slug: grep
     name: Build your own grep
     repo: https://github.com/codecrafters-io/build-your-own-grep
@@ -27,3 +35,7 @@ entries:
     name: Build your own Shell
     repo: https://github.com/codecrafters-io/build-your-own-shell
     tester_repo: https://github.com/codecrafters-io/shell-tester
+  - slug: kafka
+    name: Build your own Kafka
+    repo: https://github.com/codecrafters-io/build-your-own-kafka
+    tester_repo: https://github.com/codecrafters-io/kafka-tester
