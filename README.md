@@ -8,6 +8,12 @@ Courses wired up: **Redis** (115 stages), **Interpreter**, **Git** (7 stages), *
 **DNS server** (8 stages), **HTTP server** (14 stages), **BitTorrent**, **grep**, **Shell**
 (76 stages), and **Kafka**. Adding more is one entry in `courses.yml`.
 
+> **Not affiliated with or endorsed by CodeCrafters, Inc.** This is a personal learning
+> project. It contains original solutions to publicly available CodeCrafters challenges and
+> uses their public, MIT-licensed starter repos. Course testers and paid stage-instruction
+> content are **not** redistributed here — they are cloned locally at build time. See
+> [`LICENSE`](./LICENSE) and [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
+
 ## Prerequisites
 
 [mise](https://mise.jdx.dev) (pins Go + just) — or open the repo in the included **devcontainer**,
