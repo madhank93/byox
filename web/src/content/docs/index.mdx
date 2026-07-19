@@ -1,0 +1,59 @@
+---
+title: byox
+description: Complete CodeCrafters "Build your own X" courses entirely locally, in Go — with tester-verified reference solutions for every stage.
+template: splash
+hero:
+  tagline: Complete CodeCrafters "Build your own X" courses entirely locally, in Go — driven by the exact same official testers the real platform runs.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: Browse the catalog
+      link: /catalog/
+      icon: open-book
+      variant: secondary
+      attrs:
+        class: cta-catalog
+    - text: View on GitHub
+      link: https://github.com/madhank93/build-your-own-x
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What is byox?
+
+byox is a single-screen TUI + engine that drives the **official open-source
+course testers** from [CodeCrafters](https://codecrafters.io) — the exact same
+checks the real platform runs — entirely on your machine, with stage-by-stage
+progress tracking. No account, no submission queue.
+
+<CardGrid>
+  <Card title="10 courses" icon="puzzle">
+    Redis, Kafka, Git, SQLite, DNS server, HTTP server, BitTorrent, grep,
+    Shell, and a tree-walk Lox Interpreter.
+  </Card>
+  <Card title="Official testers" icon="rocket">
+    Every stage is checked by the same open-source tester binaries
+    CodeCrafters itself runs — not an approximation.
+  </Card>
+  <Card title="Reference solutions" icon="open-book">
+    Every course ships complete, tester-verified Go reference solutions,
+    snapshotted stage by stage — browse them in the <a href="/catalog/">catalog</a>.
+  </Card>
+  <Card title="Watch mode" icon="seti:go">
+    Rustlings-style: save a file, the current stage's tests run automatically
+    and stream into the log pane.
+  </Card>
+</CardGrid>
+
+## Start in three commands
+
+```sh
+git clone https://github.com/madhank93/build-your-own-x && cd build-your-own-x
+mise install
+just setup
+```
+
+See [Getting started](/getting-started/) for the full setup.

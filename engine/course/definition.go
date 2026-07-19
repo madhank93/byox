@@ -65,10 +65,16 @@ func (d *Definition) StageDescription(vendorDir string, s Stage) string {
 	return fmt.Sprintf("# %s\n\n_No description found for stage `%s`._", s.Name, s.Slug)
 }
 
-// resolveTemplate evaluates the Mustache-style language conditionals that
-// CodeCrafters stage descriptions use — {{#lang_is_go}}…{{/lang_is_go}}
-// (kept when lang matches) and {{^lang_is_go}}…{{/lang_is_go}} (kept when
-// it doesn't) — for the given language, then strips any leftover tags.
+// resolveTemplate evaluates the Mustache-style conditionals CodeCrafters
+// stage descriptions use — {{#name}}…{{/name}} (kept when name resolves
+// true) and {{^name}}…{{/name}} (kept when it resolves false) — then
+// strips any leftover tags. Two tag families are known: "lang_is_X" (kept
+// only for the given lang) and "reader_is_bot" (extra clarifying detail
+// CodeCrafters shows an AI/agent reader; always kept here, since it's
+// genuinely useful context and this tool has no human/bot reader
+// distinction to make). Any other tag name defaults to true — an unknown
+// future flag should fail open (show the content) rather than silently
+// hide instructions a reader might need.
 func resolveTemplate(md, lang string) string {
 	for {
 		open := findTag(md)
@@ -79,13 +85,14 @@ func resolveTemplate(md, lang string) string {
 		if name == "" {
 			break // malformed; stop to avoid a loop
 		}
-		closeTag := "{{/lang_is_" + name + "}}"
+		closeTag := "{{/" + name + "}}"
 		closeIdx := strings.Index(md[tagEnd:], closeTag)
 		if closeIdx < 0 {
 			break
 		}
 		body := md[tagEnd : tagEnd+closeIdx]
-		keep := (sigil == '#' && name == lang) || (sigil == '^' && name != lang)
+		truthy := tagTruthy(name, lang)
+		keep := (sigil == '#' && truthy) || (sigil == '^' && !truthy)
 		rest := md[tagEnd+closeIdx+len(closeTag):]
 		if keep {
 			md = md[:open] + body + rest
@@ -96,10 +103,19 @@ func resolveTemplate(md, lang string) string {
 	return md
 }
 
-// findTag returns the index of the next {{#lang_is_ or {{^lang_is_ tag.
+// tagTruthy resolves a conditional tag's name to true/false for this
+// reader (see resolveTemplate's doc comment for the known tag families).
+func tagTruthy(name, lang string) bool {
+	if langName, ok := strings.CutPrefix(name, "lang_is_"); ok {
+		return langName == lang
+	}
+	return true
+}
+
+// findTag returns the index of the next {{#…}} or {{^…}} tag.
 func findTag(md string) int {
-	a := strings.Index(md, "{{#lang_is_")
-	b := strings.Index(md, "{{^lang_is_")
+	a := strings.Index(md, "{{#")
+	b := strings.Index(md, "{{^")
 	switch {
 	case a < 0:
 		return b
@@ -110,11 +126,11 @@ func findTag(md string) int {
 	}
 }
 
-// parseTag reads the tag at idx, returning its sigil (#/^), language
-// name, and the index just past the closing }}.
+// parseTag reads the tag at idx, returning its sigil (#/^), tag name, and
+// the index just past the closing }}.
 func parseTag(md string, idx int) (byte, string, int) {
 	sigil := md[idx+2] // char after "{{"
-	nameStart := idx + len("{{#lang_is_")
+	nameStart := idx + 3
 	end := strings.Index(md[nameStart:], "}}")
 	if end < 0 {
 		return sigil, "", idx
