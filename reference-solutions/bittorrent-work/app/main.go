@@ -195,6 +195,20 @@ func main() {
 			return
 		}
 		fmt.Printf("Piece %d downloaded to %s.\n", pieceIndex, outputPath)
+	case "download":
+		outputPath := os.Args[3]
+		torrentPath := os.Args[4]
+
+		file, err := downloadFileFromTorrent(torrentPath)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if err := os.WriteFile(outputPath, file, 0644); err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("Downloaded %s to %s.\n", torrentPath, outputPath)
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
@@ -440,20 +454,28 @@ func pieceLength(info map[string]interface{}, index int) int {
 	return normalLength
 }
 
-// downloadPiece runs the bitfield/interested/unchoke/request/piece
-// exchange over an already-handshaken conn to fetch one piece, split into
-// blockSize-byte block requests.
-func downloadPiece(conn net.Conn, pieceIndex, length int) ([]byte, error) {
+// awaitReadyToDownload does the one-time-per-connection handshake
+// follow-up (bitfield/interested/unchoke) required before any piece can be
+// requested. The peer sends its bitfield once, right after the handshake -
+// not before every piece - so callers downloading multiple pieces over the
+// same connection must call this exactly once, not per piece.
+func awaitReadyToDownload(conn net.Conn) error {
 	if _, err := waitForMessage(conn, msgBitfield); err != nil {
-		return nil, err
+		return err
 	}
 	if err := writePeerMessage(conn, msgInterested, nil); err != nil {
-		return nil, err
+		return err
 	}
 	if _, err := waitForMessage(conn, msgUnchoke); err != nil {
-		return nil, err
+		return err
 	}
+	return nil
+}
 
+// downloadPiece runs the request/piece exchange over an already-handshaken
+// (and already awaitReadyToDownload'd) conn to fetch one piece, split into
+// blockSize-byte block requests.
+func downloadPiece(conn net.Conn, pieceIndex, length int) ([]byte, error) {
 	piece := make([]byte, length)
 	for offset := 0; offset < length; offset += blockSize {
 		blockLen := blockSize
@@ -504,6 +526,9 @@ func downloadPieceFromTorrent(torrentPath string, pieceIndex int) ([]byte, error
 	if _, err := performHandshake(conn, infoHash); err != nil {
 		return nil, err
 	}
+	if err := awaitReadyToDownload(conn); err != nil {
+		return nil, err
+	}
 
 	length := pieceLength(info, pieceIndex)
 	piece, err := downloadPiece(conn, pieceIndex, length)
@@ -517,4 +542,55 @@ func downloadPieceFromTorrent(torrentPath string, pieceIndex int) ([]byte, error
 		return nil, fmt.Errorf("piece %d hash mismatch", pieceIndex)
 	}
 	return piece, nil
+}
+
+// downloadFileFromTorrent does the full flow for the whole file: parse the
+// torrent, ask the tracker for peers, handshake with the first one, then
+// download every piece over that single connection in order, verifying
+// each against its expected hash from the torrent file before moving on.
+func downloadFileFromTorrent(torrentPath string) ([]byte, error) {
+	torrent, info, infoHash, err := parseTorrentFile(torrentPath)
+	if err != nil {
+		return nil, err
+	}
+	peers, err := discoverPeers(torrent, info, infoHash)
+	if err != nil {
+		return nil, err
+	}
+	if len(peers) == 0 {
+		return nil, fmt.Errorf("no peers available")
+	}
+
+	conn, err := net.Dial("tcp", peers[0])
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	if _, err := performHandshake(conn, infoHash); err != nil {
+		return nil, err
+	}
+	if err := awaitReadyToDownload(conn); err != nil {
+		return nil, err
+	}
+
+	pieceHashes := info["pieces"].(string)
+	numPieces := len(pieceHashes) / 20
+
+	file := make([]byte, 0, info["length"].(int))
+	for pieceIndex := 0; pieceIndex < numPieces; pieceIndex++ {
+		length := pieceLength(info, pieceIndex)
+		piece, err := downloadPiece(conn, pieceIndex, length)
+		if err != nil {
+			return nil, err
+		}
+
+		expectedHash := pieceHashes[pieceIndex*20 : pieceIndex*20+20]
+		actualHash := sha1.Sum(piece)
+		if string(actualHash[:]) != expectedHash {
+			return nil, fmt.Errorf("piece %d hash mismatch", pieceIndex)
+		}
+		file = append(file, piece...)
+	}
+	return file, nil
 }
