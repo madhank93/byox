@@ -546,43 +546,19 @@ func evaluate(e Expr) (interface{}, error) {
 			return l / r, nil
 		case "+":
 			if leftStr, ok := left.(string); ok {
-				if rightStr, ok := right.(string); ok {
-					return leftStr + rightStr, nil
-				}
-			} else if l, r, ok := numberOperands(left, right); ok {
-				return l + r, nil
+				return leftStr + right.(string), nil
 			}
-			return nil, &RuntimeError{"Operands must be two numbers or two strings.", expr.Line}
+			return left.(float64) + right.(float64), nil
 		case "-":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l - r, nil
+			return left.(float64) - right.(float64), nil
 		case ">":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l > r, nil
+			return left.(float64) > right.(float64), nil
 		case "<":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l < r, nil
+			return left.(float64) < right.(float64), nil
 		case ">=":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l >= r, nil
+			return left.(float64) >= right.(float64), nil
 		case "<=":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l <= r, nil
+			return left.(float64) <= right.(float64), nil
 		case "==":
 			return left == right, nil
 		case "!=":

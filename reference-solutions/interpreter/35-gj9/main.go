@@ -480,14 +480,6 @@ func isTruthy(v interface{}) bool {
 	return true
 }
 
-// numberOperands returns left/right as float64 and true if both are
-// numbers, or zero values and false otherwise.
-func numberOperands(left, right interface{}) (float64, float64, bool) {
-	l, ok1 := left.(float64)
-	r, ok2 := right.(float64)
-	return l, r, ok1 && ok2
-}
-
 // RuntimeError is a Lox runtime error (as opposed to a parse-time syntax
 // error), reported as "<message>\n[line N]" per the book's format.
 type RuntimeError struct {
@@ -533,56 +525,24 @@ func evaluate(e Expr) (interface{}, error) {
 		}
 		switch expr.Operator {
 		case "*":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l * r, nil
+			return left.(float64) * right.(float64), nil
 		case "/":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l / r, nil
+			return left.(float64) / right.(float64), nil
 		case "+":
 			if leftStr, ok := left.(string); ok {
-				if rightStr, ok := right.(string); ok {
-					return leftStr + rightStr, nil
-				}
-			} else if l, r, ok := numberOperands(left, right); ok {
-				return l + r, nil
+				return leftStr + right.(string), nil
 			}
-			return nil, &RuntimeError{"Operands must be two numbers or two strings.", expr.Line}
+			return left.(float64) + right.(float64), nil
 		case "-":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l - r, nil
+			return left.(float64) - right.(float64), nil
 		case ">":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l > r, nil
+			return left.(float64) > right.(float64), nil
 		case "<":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l < r, nil
+			return left.(float64) < right.(float64), nil
 		case ">=":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l >= r, nil
+			return left.(float64) >= right.(float64), nil
 		case "<=":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l <= r, nil
+			return left.(float64) <= right.(float64), nil
 		case "==":
 			return left == right, nil
 		case "!=":

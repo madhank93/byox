@@ -560,29 +560,13 @@ func evaluate(e Expr) (interface{}, error) {
 			}
 			return l - r, nil
 		case ">":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l > r, nil
+			return left.(float64) > right.(float64), nil
 		case "<":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l < r, nil
+			return left.(float64) < right.(float64), nil
 		case ">=":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l >= r, nil
+			return left.(float64) >= right.(float64), nil
 		case "<=":
-			l, r, ok := numberOperands(left, right)
-			if !ok {
-				return nil, &RuntimeError{"Operands must be numbers.", expr.Line}
-			}
-			return l <= r, nil
+			return left.(float64) <= right.(float64), nil
 		case "==":
 			return left == right, nil
 		case "!=":
