@@ -331,6 +331,8 @@ func stringifyValue(v interface{}) string {
 		return val
 	case *LoxFunction:
 		return fmt.Sprintf("<fn %s>", val.Declaration.Name)
+	case *NativeFunction:
+		return "<native fn>"
 	case *LoxClass:
 		return val.Name
 	case *LoxInstance:
@@ -485,7 +487,7 @@ func (p *Parser) assignment() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if target, ok := expr.(*VariableExpr); ok {
+		if target, ok := expr.(*VariableExpr); ok && target.Name != "this" {
 			return &AssignExpr{target.Name, value, eqTok.Line}, nil
 		}
 		if target, ok := expr.(*GetExpr); ok {
