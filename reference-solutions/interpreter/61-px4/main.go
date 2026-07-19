@@ -859,30 +859,11 @@ func (f *LoxFunction) Call(args []interface{}) (interface{}, error) {
 		callEnv.Define(param, args[i])
 	}
 	for _, stmt := range f.Declaration.Body {
-		err := execute(stmt, callEnv)
-		if err == nil {
-			continue
+		if err := execute(stmt, callEnv); err != nil {
+			return nil, err
 		}
-		if ret, ok := err.(*returnSignal); ok {
-			return ret.Value, nil
-		}
-		return nil, err
 	}
 	return nil, nil
-}
-
-// returnSignal is how a "return" statement unwinds out of however many
-// nested statements/blocks it's inside, back up to the enclosing
-// LoxFunction.Call — abusing Go's error-propagation plumbing (every
-// execute() call already checks and forwards errors) as ad hoc
-// non-local control flow, the same way the book's Java implementation
-// uses an exception for this.
-type returnSignal struct {
-	Value interface{}
-}
-
-func (r *returnSignal) Error() string {
-	return "return outside a function"
 }
 
 // NewChildEnvironment creates a new innermost scope enclosed by parent,
@@ -966,12 +947,6 @@ type FunctionStmt struct {
 	Name   string
 	Params []string
 	Body   []Stmt
-}
-
-// ReturnStmt is "return [value];". Value is nil for a bare "return;".
-type ReturnStmt struct {
-	Value Expr
-	Line  int
 }
 
 // parseProgram parses a full "run"-mode source as a sequence of
@@ -1090,22 +1065,6 @@ func (p *Parser) parseVarDecl() (Stmt, error) {
 }
 
 func (p *Parser) parseStatement() (Stmt, error) {
-	if p.tokens[p.pos].Type == "RETURN" {
-		retTok := p.tokens[p.pos]
-		p.pos++
-		var value Expr
-		if p.tokens[p.pos].Type != "SEMICOLON" {
-			var err error
-			value, err = p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-		}
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
-		}
-		return ReturnStmt{value, retTok.Line}, nil
-	}
 	if p.tokens[p.pos].Type == "FOR" {
 		p.pos++
 		if err := p.expectToken("LEFT_PAREN", "'(' after 'for'"); err != nil {
@@ -1329,16 +1288,6 @@ func execute(stmt Stmt, env *Environment) error {
 	case FunctionStmt:
 		env.Define(s.Name, &LoxFunction{Declaration: s, Closure: env})
 		return nil
-	case ReturnStmt:
-		var value interface{}
-		if s.Value != nil {
-			var err error
-			value, err = evaluate(s.Value, env)
-			if err != nil {
-				return err
-			}
-		}
-		return &returnSignal{value}
 	}
 	return fmt.Errorf("cannot execute statement of type %T", stmt)
 }
