@@ -618,12 +618,6 @@ type PrintStmt struct {
 	Expr Expr
 }
 
-// ExprStmt is a bare expression, evaluated for its side effects and
-// otherwise discarded.
-type ExprStmt struct {
-	Expr Expr
-}
-
 // parseProgram parses a full "run"-mode source as a sequence of
 // semicolon-terminated statements, up to EOF.
 func (p *Parser) parseProgram() ([]Stmt, error) {
@@ -650,14 +644,8 @@ func (p *Parser) parseStatement() (Stmt, error) {
 		}
 		return PrintStmt{expr}, nil
 	}
-	expr, err := p.parseExpression()
-	if err != nil {
-		return nil, err
-	}
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
-	}
-	return ExprStmt{expr}, nil
+	tok := p.tokens[p.pos]
+	return nil, fmt.Errorf("[line %d] Error at %s: Expect expression.", tok.Line, describeToken(tok))
 }
 
 // expectSemicolon consumes a trailing ";" or returns a syntax error
@@ -681,9 +669,6 @@ func execute(stmt Stmt) error {
 		}
 		fmt.Println(stringifyValue(value))
 		return nil
-	case ExprStmt:
-		_, err := evaluate(s.Expr)
-		return err
 	}
 	return fmt.Errorf("cannot execute statement of type %T", stmt)
 }
