@@ -674,26 +674,15 @@ func evaluate(e Expr, env *Environment) (interface{}, error) {
 	return nil, fmt.Errorf("cannot evaluate expression of type %T", e)
 }
 
-// Environment holds variable bindings for one scope, chained to its
-// enclosing scope's Environment (nil for the global scope) so lookups and
-// assignments can walk outward through nested blocks.
+// Environment holds global variable bindings.
 type Environment struct {
 	values map[string]interface{}
-	parent *Environment
 }
 
 func NewEnvironment() *Environment {
 	return &Environment{values: map[string]interface{}{}}
 }
 
-// NewChildEnvironment creates a new innermost scope enclosed by parent,
-// used for the duration of one block statement.
-func NewChildEnvironment(parent *Environment) *Environment {
-	return &Environment{values: map[string]interface{}{}, parent: parent}
-}
-
-// Define always declares in this scope, even if an outer scope already
-// has a variable of the same name (shadowing, not redeclaration).
 func (env *Environment) Define(name string, value interface{}) {
 	env.values[name] = value
 }
@@ -702,25 +691,17 @@ func (env *Environment) Get(name string, line int) (interface{}, error) {
 	if v, ok := env.values[name]; ok {
 		return v, nil
 	}
-	if env.parent != nil {
-		return env.parent.Get(name, line)
-	}
 	return nil, &RuntimeError{fmt.Sprintf("Undefined variable '%s'.", name), line}
 }
 
-// Assign sets an already-declared variable's value, walking outward
-// through enclosing scopes to find where it was declared. Errors if it
-// was never declared anywhere in the chain (assignment doesn't implicitly
-// declare, unlike Define).
+// Assign sets an already-declared variable's value, erroring if it was
+// never declared (assignment doesn't implicitly declare, unlike Define).
 func (env *Environment) Assign(name string, value interface{}, line int) error {
-	if _, ok := env.values[name]; ok {
-		env.values[name] = value
-		return nil
+	if _, ok := env.values[name]; !ok {
+		return &RuntimeError{fmt.Sprintf("Undefined variable '%s'.", name), line}
 	}
-	if env.parent != nil {
-		return env.parent.Assign(name, value, line)
-	}
-	return &RuntimeError{fmt.Sprintf("Undefined variable '%s'.", name), line}
+	env.values[name] = value
+	return nil
 }
 
 // Stmt is a parsed Lox statement, executed by the "run" command.
@@ -859,9 +840,8 @@ func execute(stmt Stmt, env *Environment) error {
 		_, err := evaluate(s.Expr, env)
 		return err
 	case BlockStmt:
-		blockEnv := NewChildEnvironment(env)
 		for _, stmt := range s.Statements {
-			if err := execute(stmt, blockEnv); err != nil {
+			if err := execute(stmt, env); err != nil {
 				return err
 			}
 		}
