@@ -51,6 +51,12 @@ var supportedAPIs = []struct {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
+	// A malformed or truncated request can make byteReader's unchecked
+	// reads run past the buffer end. Recovering here means that drops
+	// this one connection instead of crashing the whole broker process.
+	defer func() {
+		recover()
+	}()
 
 	for {
 		if err := handleRequest(conn); err != nil {
@@ -106,7 +112,7 @@ func apiVersionsBody(apiVersion int16) []byte {
 // response body, looking each requested topic up in the cluster metadata
 // log read from disk.
 func describeTopicPartitionsBody(r *byteReader) []byte {
-	topicCount := int(r.uvarint()) - 1
+	topicCount := r.compactCount()
 	topics := make([]string, topicCount)
 	for i := range topics {
 		topics[i] = r.compactString()
@@ -176,19 +182,20 @@ type fetchTopicRequest struct {
 // topic, a UUID and a COMPACT_ARRAY of partitions (of which only the
 // partition index is needed so far).
 func parseFetchTopics(r *byteReader) []fetchTopicRequest {
-	topicCount := int(r.uvarint()) - 1
+	topicCount := r.compactCount()
 	topics := make([]fetchTopicRequest, topicCount)
 	for i := range topics {
 		var id [16]byte
 		copy(id[:], r.bytes(16))
 
-		partCount := int(r.uvarint()) - 1
+		partCount := r.compactCount()
 		partitions := make([]fetchPartitionRequest, partCount)
 		for j := range partitions {
 			partitions[j].partition = r.int32()
 			r.skip(4 + 8 + 4 + 8 + 4) // current_leader_epoch, fetch_offset, last_fetched_epoch, log_start_offset, partition_max_bytes
+			r.tagBuffer()             // per-partition TAG_BUFFER
 		}
-		r.tagBuffer()
+		r.tagBuffer() // per-topic TAG_BUFFER
 
 		topics[i] = fetchTopicRequest{topicID: id, partitions: partitions}
 	}
@@ -260,12 +267,12 @@ type produceTopicRequest struct {
 // a varint length+1 prefix followed by raw, already-wire-format bytes),
 // ready to append straight to a partition's on-disk log file.
 func parseProduceTopics(r *byteReader) []produceTopicRequest {
-	topicCount := int(r.uvarint()) - 1
+	topicCount := r.compactCount()
 	topics := make([]produceTopicRequest, topicCount)
 	for i := range topics {
 		name := r.compactString()
 
-		partCount := int(r.uvarint()) - 1
+		partCount := r.compactCount()
 		partitions := make([]producePartitionRequest, partCount)
 		for j := range partitions {
 			id := r.int32()
@@ -408,6 +415,18 @@ func (r *byteReader) uvarint() uint64 {
 	v, n := binary.Uvarint(r.buf[r.pos:])
 	r.pos += n
 	return v
+}
+
+// compactCount reads a COMPACT_ARRAY length prefix (an unsigned varint of
+// count+1) and returns the actual count. A null array is encoded as 0,
+// which would otherwise decode to -1 and panic a make([]T, n) call - this
+// clamps that case to 0 instead.
+func (r *byteReader) compactCount() int {
+	n := int(r.uvarint()) - 1
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 // varint reads a zigzag-encoded signed varint — Kafka's plain VARINT
