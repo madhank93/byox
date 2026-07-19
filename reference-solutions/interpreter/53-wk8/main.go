@@ -437,35 +437,17 @@ func (p *Parser) assignment() (Expr, error) {
 // or parses left-associative "or", one level looser than equality (and
 // binds looser than assignment, so "a = b or c" is "a = (b or c)").
 func (p *Parser) or() (Expr, error) {
-	expr, err := p.and()
+	expr, err := p.equality()
 	if err != nil {
 		return nil, err
 	}
 	for p.tokens[p.pos].Type == "OR" {
 		p.pos++
-		right, err := p.and()
-		if err != nil {
-			return nil, err
-		}
-		expr = LogicalExpr{"or", expr, right}
-	}
-	return expr, nil
-}
-
-// and parses left-associative "and", one level tighter than or (so
-// "and" binds tighter — "a or b and c" is "a or (b and c)").
-func (p *Parser) and() (Expr, error) {
-	expr, err := p.equality()
-	if err != nil {
-		return nil, err
-	}
-	for p.tokens[p.pos].Type == "AND" {
-		p.pos++
 		right, err := p.equality()
 		if err != nil {
 			return nil, err
 		}
-		expr = LogicalExpr{"and", expr, right}
+		expr = LogicalExpr{"or", expr, right}
 	}
 	return expr, nil
 }
