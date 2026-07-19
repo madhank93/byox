@@ -512,24 +512,9 @@ func evaluate(e Expr) (interface{}, error) {
 		case "/":
 			return left.(float64) / right.(float64), nil
 		case "+":
-			if leftStr, ok := left.(string); ok {
-				return leftStr + right.(string), nil
-			}
 			return left.(float64) + right.(float64), nil
 		case "-":
 			return left.(float64) - right.(float64), nil
-		case ">":
-			return left.(float64) > right.(float64), nil
-		case "<":
-			return left.(float64) < right.(float64), nil
-		case ">=":
-			return left.(float64) >= right.(float64), nil
-		case "<=":
-			return left.(float64) <= right.(float64), nil
-		case "==":
-			return left == right, nil
-		case "!=":
-			return left != right, nil
 		}
 	}
 	return nil, fmt.Errorf("cannot evaluate expression of type %T", e)

@@ -497,40 +497,6 @@ func evaluate(e Expr) (interface{}, error) {
 		case "!":
 			return !isTruthy(right), nil
 		}
-	case BinaryExpr:
-		left, err := evaluate(expr.Left)
-		if err != nil {
-			return nil, err
-		}
-		right, err := evaluate(expr.Right)
-		if err != nil {
-			return nil, err
-		}
-		switch expr.Operator {
-		case "*":
-			return left.(float64) * right.(float64), nil
-		case "/":
-			return left.(float64) / right.(float64), nil
-		case "+":
-			if leftStr, ok := left.(string); ok {
-				return leftStr + right.(string), nil
-			}
-			return left.(float64) + right.(float64), nil
-		case "-":
-			return left.(float64) - right.(float64), nil
-		case ">":
-			return left.(float64) > right.(float64), nil
-		case "<":
-			return left.(float64) < right.(float64), nil
-		case ">=":
-			return left.(float64) >= right.(float64), nil
-		case "<=":
-			return left.(float64) <= right.(float64), nil
-		case "==":
-			return left == right, nil
-		case "!=":
-			return left != right, nil
-		}
 	}
 	return nil, fmt.Errorf("cannot evaluate expression of type %T", e)
 }

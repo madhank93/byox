@@ -466,71 +466,12 @@ func describeToken(tok Token) string {
 	return "'" + tok.Lexeme + "'"
 }
 
-// isTruthy applies Lox's truthiness rule: false and nil are falsy,
-// everything else (including 0 and "") is truthy.
-func isTruthy(v interface{}) bool {
-	if v == nil {
-		return false
-	}
-	if b, ok := v.(bool); ok {
-		return b
-	}
-	return true
-}
-
 // evaluate walks an Expr tree and returns its runtime value (bool,
 // float64, string, or nil).
 func evaluate(e Expr) (interface{}, error) {
 	switch expr := e.(type) {
 	case LiteralExpr:
 		return expr.Value, nil
-	case GroupingExpr:
-		return evaluate(expr.Inner)
-	case UnaryExpr:
-		right, err := evaluate(expr.Right)
-		if err != nil {
-			return nil, err
-		}
-		switch expr.Operator {
-		case "-":
-			return -right.(float64), nil
-		case "!":
-			return !isTruthy(right), nil
-		}
-	case BinaryExpr:
-		left, err := evaluate(expr.Left)
-		if err != nil {
-			return nil, err
-		}
-		right, err := evaluate(expr.Right)
-		if err != nil {
-			return nil, err
-		}
-		switch expr.Operator {
-		case "*":
-			return left.(float64) * right.(float64), nil
-		case "/":
-			return left.(float64) / right.(float64), nil
-		case "+":
-			if leftStr, ok := left.(string); ok {
-				return leftStr + right.(string), nil
-			}
-			return left.(float64) + right.(float64), nil
-		case "-":
-			return left.(float64) - right.(float64), nil
-		case ">":
-			return left.(float64) > right.(float64), nil
-		case "<":
-			return left.(float64) < right.(float64), nil
-		case ">=":
-			return left.(float64) >= right.(float64), nil
-		case "<=":
-			return left.(float64) <= right.(float64), nil
-		case "==":
-			return left == right, nil
-		case "!=":
-			return left != right, nil
-		}
 	}
 	return nil, fmt.Errorf("cannot evaluate expression of type %T", e)
 }
