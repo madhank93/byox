@@ -390,6 +390,26 @@ func (m *model) previousSolutionFile(ci, stageIdx int) (string, bool) {
 	return "", false
 }
 
+// originStage returns the 1-based stage number where the given solution
+// content was first introduced: walking back over earlier stages whose
+// snapshot is byte-identical (a feature-group run), it reports the first
+// stage of that run. Falls back to the current stage if none earlier match.
+func (m *model) originStage(ci, stageIdx int, content string) int {
+	origin := stageIdx
+	for idx := stageIdx - 1; idx >= 0; idx-- {
+		p, ok := m.solutionFile(ci, idx)
+		if !ok {
+			break
+		}
+		data, err := os.ReadFile(p)
+		if err != nil || string(data) != content {
+			break
+		}
+		origin = idx
+	}
+	return origin + 1
+}
+
 // showSolution renders the reference solution for the cursor's stage into
 // the right pane. By default it shows only what changed since the
 // previous stage's solution (the reference files are cumulative full
@@ -442,9 +462,11 @@ func (m *model) showSolution() {
 	}
 	delta, changed := diff.Unified(string(prevData), content)
 	if !changed {
-		md := "### Reference solution\n\nNo code changes for this stage — `" + base +
-			"` is identical to the previous stage's solution. This stage's work is in " +
-			"the tests/behavior, not new code.\n\nPress `f` to see the full file anyway."
+		origin := m.originStage(r.course, r.stage, content)
+		md := fmt.Sprintf("### Reference solution\n\nNo new code for this stage — it's covered by the "+
+			"same cumulative solution introduced at **stage %d**. These reference snapshots were "+
+			"captured per feature-group, so a group's code shows up at the stage that starts it; "+
+			"see stage %d for the diff.\n\nPress `f` to see the full file anyway.", origin, origin)
 		m.rightVP.SetContent(m.renderMD(md))
 		m.rightVP.GotoTop()
 		return

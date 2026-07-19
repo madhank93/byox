@@ -51,6 +51,7 @@ type stageEntry struct {
 	Verified    bool
 	SourcePath  string // repo-relative path to the snapshotted main.go, if verified
 	PrevPath    string // repo-relative path to the nearest earlier stage's snapshot, if any
+	OriginStage int    // stage number where this snapshot's content was first introduced
 }
 
 type courseInfo struct {
@@ -102,6 +103,14 @@ func run() error {
 
 		verifiedByIndex := verifiedStages(filepath.Join(root, "reference-solutions", c.Slug))
 
+		// Track where each snapshot's content was first introduced. Some
+		// courses (notably redis) were snapshotted per feature-group, so a
+		// run of consecutive stages shares one cumulative file; originStage
+		// points every stage in a run at the stage that actually added the
+		// code, so an unchanged stage can say so meaningfully.
+		var lastContent string
+		originStage := 0
+
 		ci := courseInfo{
 			Slug:  c.Slug,
 			Name:  c.Name,
@@ -137,6 +146,13 @@ func run() error {
 						break
 					}
 				}
+				if src, err := os.ReadFile(filepath.Join(root, e.SourcePath)); err == nil {
+					if content := string(src); content != lastContent {
+						originStage = n
+						lastContent = content
+					}
+				}
+				e.OriginStage = originStage
 			}
 			// Every stage gets a detail file (full description); only
 			// verified ones get the reference-solution spoiler appended.
@@ -267,6 +283,8 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 				if changed {
 					b.WriteString("_Changes this stage adds to the previous stage's solution:_\n\n")
 					fmt.Fprintf(&b, "```diff title=%q\n%s\n```\n\n", "main.go", delta)
+				} else if e.OriginStage > 0 && e.OriginStage < e.Index {
+					fmt.Fprintf(&b, "_No new code for this stage — it's covered by the same cumulative solution introduced at **stage %d** (these reference snapshots were captured per feature-group, so a group's code appears at the stage that starts it). See stage %d for the diff._\n\n", e.OriginStage, e.OriginStage)
 				} else {
 					b.WriteString("_No code changes this stage — identical to the previous stage's solution; the work is in the tests/behavior._\n\n")
 				}
