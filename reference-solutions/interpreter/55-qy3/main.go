@@ -837,101 +837,7 @@ func (p *Parser) parseProgram() ([]Stmt, error) {
 	return stmts, nil
 }
 
-// parseVarDecl parses "var name [= initializer];", used both directly as
-// a statement and as a for-loop's initializer clause.
-func (p *Parser) parseVarDecl() (Stmt, error) {
-	p.pos++ // consume "var"
-	if p.tokens[p.pos].Type != "IDENTIFIER" {
-		tok := p.tokens[p.pos]
-		return nil, fmt.Errorf("[line %d] Error at %s: Expect variable name.", tok.Line, describeToken(tok))
-	}
-	name := p.tokens[p.pos].Lexeme
-	p.pos++
-	var initializer Expr
-	if p.tokens[p.pos].Type == "EQUAL" {
-		p.pos++
-		var err error
-		initializer, err = p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
-	}
-	return VarStmt{name, initializer}, nil
-}
-
 func (p *Parser) parseStatement() (Stmt, error) {
-	if p.tokens[p.pos].Type == "FOR" {
-		p.pos++
-		if err := p.expectToken("LEFT_PAREN", "'(' after 'for'"); err != nil {
-			return nil, err
-		}
-
-		var initializer Stmt
-		var err error
-		switch p.tokens[p.pos].Type {
-		case "SEMICOLON":
-			p.pos++
-		case "VAR":
-			initializer, err = p.parseVarDecl()
-			if err != nil {
-				return nil, err
-			}
-		default:
-			expr, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-			if err := p.expectSemicolon(); err != nil {
-				return nil, err
-			}
-			initializer = ExprStmt{expr}
-		}
-
-		var condition Expr
-		if p.tokens[p.pos].Type != "SEMICOLON" {
-			condition, err = p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-		}
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
-		}
-
-		var increment Expr
-		if p.tokens[p.pos].Type != "RIGHT_PAREN" {
-			increment, err = p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-		}
-		if err := p.expectToken("RIGHT_PAREN", "')' after for clauses"); err != nil {
-			return nil, err
-		}
-
-		body, err := p.parseStatement()
-		if err != nil {
-			return nil, err
-		}
-
-		// Desugar for(init; cond; incr) body into:
-		//   { init; while (cond) { body; incr; } }
-		// — no dedicated ForStmt AST node needed.
-		if increment != nil {
-			body = BlockStmt{[]Stmt{body, ExprStmt{increment}}}
-		}
-		if condition == nil {
-			condition = LiteralExpr{true}
-		}
-		body = WhileStmt{condition, body}
-		if initializer != nil {
-			body = BlockStmt{[]Stmt{initializer, body}}
-		}
-		return body, nil
-	}
 	if p.tokens[p.pos].Type == "WHILE" {
 		p.pos++
 		if err := p.expectToken("LEFT_PAREN", "'(' after 'while'"); err != nil {
@@ -1005,7 +911,26 @@ func (p *Parser) parseStatement() (Stmt, error) {
 		return PrintStmt{expr}, nil
 	}
 	if p.tokens[p.pos].Type == "VAR" {
-		return p.parseVarDecl()
+		p.pos++
+		if p.tokens[p.pos].Type != "IDENTIFIER" {
+			tok := p.tokens[p.pos]
+			return nil, fmt.Errorf("[line %d] Error at %s: Expect variable name.", tok.Line, describeToken(tok))
+		}
+		name := p.tokens[p.pos].Lexeme
+		p.pos++
+		var initializer Expr
+		if p.tokens[p.pos].Type == "EQUAL" {
+			p.pos++
+			var err error
+			initializer, err = p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := p.expectSemicolon(); err != nil {
+			return nil, err
+		}
+		return VarStmt{name, initializer}, nil
 	}
 	expr, err := p.parseExpression()
 	if err != nil {
