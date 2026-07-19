@@ -18,6 +18,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/madhan/byox/course"
+	"github.com/madhan/byox/diff"
 	"github.com/madhan/byox/internal/progress"
 	"github.com/madhan/byox/internal/runner"
 )
@@ -439,7 +440,8 @@ func (m *model) showSolution() {
 		m.rightVP.GotoTop()
 		return
 	}
-	if string(prevData) == content {
+	delta, changed := diff.Unified(string(prevData), content)
+	if !changed {
 		md := "### Reference solution\n\nNo code changes for this stage — `" + base +
 			"` is identical to the previous stage's solution. This stage's work is in " +
 			"the tests/behavior, not new code.\n\nPress `f` to see the full file anyway."
@@ -447,127 +449,9 @@ func (m *model) showSolution() {
 		m.rightVP.GotoTop()
 		return
 	}
-	diff := formatDiff(diffLines(strings.Split(string(prevData), "\n"), strings.Split(content, "\n")))
-	md := "### Reference solution — changes for this stage\n\n`" + base + "`\n\n```diff\n" + diff + "\n```"
+	md := "### Reference solution — changes for this stage\n\n`" + base + "`\n\n```diff\n" + delta + "\n```"
 	m.rightVP.SetContent(m.renderMD(md))
 	m.rightVP.GotoTop()
-}
-
-// diffOp is one line of a line-level edit script: ' ' unchanged, '-'
-// present only in old, '+' present only in new.
-type diffOp struct {
-	kind byte
-	text string
-}
-
-// diffLines computes a minimal line-level edit script from old to new via
-// a standard LCS dynamic program. Reference solutions here top out
-// around a couple thousand lines, so the O(n·m) table is cheap enough to
-// build on demand for a single keypress.
-func diffLines(old, new []string) []diffOp {
-	n, m := len(old), len(new)
-	dp := make([][]int, n+1)
-	for i := range dp {
-		dp[i] = make([]int, m+1)
-	}
-	for i := n - 1; i >= 0; i-- {
-		for j := m - 1; j >= 0; j-- {
-			if old[i] == new[j] {
-				dp[i][j] = dp[i+1][j+1] + 1
-			} else if dp[i+1][j] >= dp[i][j+1] {
-				dp[i][j] = dp[i+1][j]
-			} else {
-				dp[i][j] = dp[i][j+1]
-			}
-		}
-	}
-	var ops []diffOp
-	i, j := 0, 0
-	for i < n && j < m {
-		switch {
-		case old[i] == new[j]:
-			ops = append(ops, diffOp{' ', old[i]})
-			i++
-			j++
-		case dp[i+1][j] >= dp[i][j+1]:
-			ops = append(ops, diffOp{'-', old[i]})
-			i++
-		default:
-			ops = append(ops, diffOp{'+', new[j]})
-			j++
-		}
-	}
-	for ; i < n; i++ {
-		ops = append(ops, diffOp{'-', old[i]})
-	}
-	for ; j < m; j++ {
-		ops = append(ops, diffOp{'+', new[j]})
-	}
-	return ops
-}
-
-// diffContext is how many unchanged lines to keep around each change when
-// formatting a diff, matching the readability of a typical unified diff.
-const diffContext = 2
-
-// formatDiff renders an edit script as unified-diff-style text (a leading
-// "+"/"-"/" " per line, no hunk headers), collapsing long unchanged runs
-// down to a short elision marker so the output stays focused on what
-// actually changed.
-func formatDiff(ops []diffOp) string {
-	var out []string
-	n := len(ops)
-	for i := 0; i < n; {
-		if ops[i].kind != ' ' {
-			out = append(out, string(ops[i].kind)+ops[i].text)
-			i++
-			continue
-		}
-		j := i
-		for j < n && ops[j].kind == ' ' {
-			j++
-		}
-		runLen := j - i
-		atStart, atEnd := i == 0, j == n
-		switch {
-		case atStart && atEnd:
-			for k := i; k < j; k++ {
-				out = append(out, " "+ops[k].text)
-			}
-		case atStart:
-			skip := runLen - diffContext
-			start := i
-			if skip > 0 {
-				out = append(out, fmt.Sprintf(" … %d unchanged lines …", skip))
-				start = j - diffContext
-			}
-			for k := start; k < j; k++ {
-				out = append(out, " "+ops[k].text)
-			}
-		case atEnd:
-			show := min(diffContext, runLen)
-			for k := i; k < i+show; k++ {
-				out = append(out, " "+ops[k].text)
-			}
-			if runLen > show {
-				out = append(out, fmt.Sprintf(" … %d unchanged lines …", runLen-show))
-			}
-		case runLen <= diffContext*2:
-			for k := i; k < j; k++ {
-				out = append(out, " "+ops[k].text)
-			}
-		default:
-			for k := i; k < i+diffContext; k++ {
-				out = append(out, " "+ops[k].text)
-			}
-			out = append(out, fmt.Sprintf(" … %d unchanged lines …", runLen-diffContext*2))
-			for k := j - diffContext; k < j; k++ {
-				out = append(out, " "+ops[k].text)
-			}
-		}
-		i = j
-	}
-	return strings.Join(out, "\n")
 }
 
 func (m *model) renderMD(md string) string {

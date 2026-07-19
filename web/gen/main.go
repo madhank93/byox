@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/madhan/byox/course"
+	"github.com/madhan/byox/diff"
 )
 
 const (
@@ -49,6 +50,7 @@ type stageEntry struct {
 	Description string
 	Verified    bool
 	SourcePath  string // repo-relative path to the snapshotted main.go, if verified
+	PrevPath    string // repo-relative path to the nearest earlier stage's snapshot, if any
 }
 
 type courseInfo struct {
@@ -126,6 +128,15 @@ func run() error {
 			if ok {
 				ci.Verified++
 				e.SourcePath = fmt.Sprintf("reference-solutions/%s/%s/main.go", c.Slug, snapDir)
+				// Nearest earlier verified stage, for the per-stage diff.
+				// Snapshots are cumulative, so diffing against it isolates
+				// what THIS stage added rather than the whole program.
+				for m := n - 1; m >= 1; m-- {
+					if prev, has := verifiedByIndex[m]; has {
+						e.PrevPath = fmt.Sprintf("reference-solutions/%s/%s/main.go", c.Slug, prev)
+						break
+					}
+				}
 			}
 			// Every stage gets a detail file (full description); only
 			// verified ones get the reference-solution spoiler appended.
@@ -243,10 +254,29 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 	b.WriteString(fullDescription)
 	b.WriteString("\n\n")
 
-	src, err := os.ReadFile(filepath.Join(root, e.SourcePath))
-	if err == nil {
+	if src, err := os.ReadFile(filepath.Join(root, e.SourcePath)); err == nil {
+		cur := strings.TrimRight(string(src), "\n")
 		b.WriteString("<details>\n<summary>Show the reference solution (spoiler)</summary>\n\n")
-		fmt.Fprintf(&b, "```go title=%q\n%s\n```\n\n", "main.go", strings.TrimRight(string(src), "\n"))
+		// Snapshots are cumulative full programs. Show only what THIS
+		// stage added (the diff vs the nearest earlier stage), so the
+		// page never dumps the whole solution — the final stage included.
+		// The first verified stage has no baseline, so it shows in full.
+		if e.PrevPath != "" {
+			if prev, err := os.ReadFile(filepath.Join(root, e.PrevPath)); err == nil {
+				delta, changed := diff.Unified(strings.TrimRight(string(prev), "\n"), cur)
+				if changed {
+					b.WriteString("_Changes this stage adds to the previous stage's solution:_\n\n")
+					fmt.Fprintf(&b, "```diff title=%q\n%s\n```\n\n", "main.go", delta)
+				} else {
+					b.WriteString("_No code changes this stage — identical to the previous stage's solution; the work is in the tests/behavior._\n\n")
+				}
+				b.WriteString("</details>\n")
+				name := e.Course + "-" + e.Slug + ".md"
+				return os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644)
+			}
+		}
+		b.WriteString("_First stage's reference solution (baseline):_\n\n")
+		fmt.Fprintf(&b, "```go title=%q\n%s\n```\n\n", "main.go", cur)
 		b.WriteString("</details>\n")
 	}
 
