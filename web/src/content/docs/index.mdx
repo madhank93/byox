@@ -4,6 +4,9 @@ description: Complete CodeCrafters "Build your own X" courses entirely locally, 
 template: splash
 hero:
   tagline: Complete CodeCrafters "Build your own X" courses entirely locally, in Go — driven by the exact same official testers the real platform runs.
+  image:
+    alt: byox
+    file: ../../assets/byox.svg
   actions:
     - text: Get started
       link: /getting-started/
@@ -21,6 +24,9 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
+import AsciinemaPlayer from '../../components/AsciinemaPlayer.astro';
+
+<AsciinemaPlayer caption="Pick a course, write the stage, save — the official CodeCrafters tester runs locally and every earlier stage re-runs with it. 10 courses, 390 stages, no account." />
 
 ## What is byox?
 

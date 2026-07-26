@@ -1,0 +1,63 @@
+---
+// Embeds an asciinema recording of a terminal session. The .cast lives in
+// public/ and is served at the site root.
+//
+// A recording rather than a GIF: text stays crisp at any width, the file is a
+// fraction of the size, and viewers can pause and scrub.
+interface Props {
+  /** File name of the recording in public/. */
+  cast?: string;
+  /** Sentence shown under the player. Falls back to the golings blurb. */
+  caption?: string;
+}
+
+const { cast = 'demo.cast', caption } = Astro.props;
+const src = `${import.meta.env.BASE_URL}${cast}`;
+---
+
+<div id="asciinema-demo" data-src={src} class="not-content"></div>
+
+{
+  caption ? (
+    <p class="demo-caption" set:html={caption} />
+  ) : (
+    <p class="demo-caption">
+      An interactive Go trainer in your terminal: edit and fix <span class="broken">broken</span>
+      exercises with instant test&nbsp;+&nbsp;lint feedback, plus navigation, search,
+      hints, and streaks — 138 exercises, basics to concurrency.
+    </p>
+  )
+}
+
+<script>
+  import "asciinema-player/dist/bundle/asciinema-player.css";
+  import * as AsciinemaPlayer from "asciinema-player";
+
+  const el = document.getElementById("asciinema-demo");
+  if (el && el.dataset.src) {
+    AsciinemaPlayer.create(el.dataset.src, el, {
+      autoPlay: true,
+      loop: true,
+      fit: "width",
+      poster: "npt:0:2",
+      idleTimeLimit: 2,
+    });
+  }
+</script>
+
+<style>
+  #asciinema-demo {
+    max-width: 960px;
+    margin-inline: auto;
+  }
+  .demo-caption {
+    max-width: 960px;
+    margin: 0.75rem auto 0;
+    text-align: center;
+    font-style: italic;
+    opacity: 0.9;
+  }
+  .demo-caption :global(.broken) {
+    color: #f85149;
+  }
+</style>

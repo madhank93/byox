@@ -1,6 +1,9 @@
 [tools]
 go = "1.25"
 just = "latest"
+# The site is built with `just web`; Astro requires >=22.12, so pin node here
+# rather than inheriting whatever the global mise config happens to select.
+node = "22"
 
 [env]
 GOTOOLCHAIN = "auto"
