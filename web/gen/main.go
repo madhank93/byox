@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/madhan/byox/course"
-	"github.com/madhan/byox/diff"
+	"github.com/madhank93/byox/course"
+	"github.com/madhank93/byox/diff"
 )
 
 const (

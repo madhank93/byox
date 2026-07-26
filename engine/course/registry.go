@@ -33,6 +33,18 @@ func LoadRegistry(root string) (*Registry, error) {
 	if len(r.Entries) == 0 {
 		return nil, fmt.Errorf("courses.yml has no entries")
 	}
+	// Every slug and repo URL here is turned into a filesystem path. Check them
+	// once, at load, so no consumer of CourseRef has to.
+	seen := map[string]bool{}
+	for _, c := range r.Entries {
+		if err := c.Validate(); err != nil {
+			return nil, fmt.Errorf("courses.yml: %w", err)
+		}
+		if seen[c.Slug] {
+			return nil, fmt.Errorf("courses.yml: duplicate slug %q", c.Slug)
+		}
+		seen[c.Slug] = true
+	}
 	return &r, nil
 }
 

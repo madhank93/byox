@@ -1,0 +1,49 @@
+name: Catalog
+
+# Kept separate from CI, and path-filtered, because the generator clones every
+# course repo it does not find under vendor/ — that is minutes of network on a
+# cold runner, and it is only worth spending when the inputs actually changed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'courses.yml'
+      - 'reference-solutions/**'
+      - 'web/gen/**'
+      - 'engine/course/**'
+      - '.github/workflows/catalog.yml'
+  pull_request:
+    paths:
+      - 'courses.yml'
+      - 'reference-solutions/**'
+      - 'web/gen/**'
+      - 'engine/course/**'
+      - '.github/workflows/catalog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gen:
+    name: catalog.ts is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+      # Regenerating also validates courses.yml: LoadRegistry rejects a bad
+      # slug, an unusable repo URL, or a duplicate course. Without this job that
+      # validation would never run anywhere.
+      - name: Regenerate the catalog
+        working-directory: web/gen
+        run: go run .
+      - name: Fail if the committed catalog is stale
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::web/src/data is out of date."
+            echo "Run 'just gen' and commit the result."
+            git diff --stat
+            exit 1
+          fi

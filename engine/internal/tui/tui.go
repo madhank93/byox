@@ -17,10 +17,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/madhan/byox/course"
-	"github.com/madhan/byox/diff"
-	"github.com/madhan/byox/internal/progress"
-	"github.com/madhan/byox/internal/runner"
+	"github.com/madhank93/byox/course"
+	"github.com/madhank93/byox/diff"
+	"github.com/madhank93/byox/internal/progress"
+	"github.com/madhank93/byox/internal/runner"
 )
 
 type rightMode int
@@ -110,7 +110,7 @@ type model struct {
 	running   bool
 	runCourse int // course index captured at startRun
 	runPassed *bool
-	runLog    strings.Builder
+	runLog    logBuffer
 	runCh     chan tea.Msg
 
 	watchCh     chan tea.Msg
@@ -573,7 +573,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(listenWatch(m.watchCh), cmd)
 
 	case logLineMsg:
-		m.runLog.WriteString(string(msg) + "\n")
+		m.runLog.AddLine(string(msg))
 		if m.mode == modeLog {
 			m.rightVP.SetContent(m.runLog.String())
 			m.rightVP.GotoBottom()

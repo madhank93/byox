@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/madhan/byox/course"
-	"github.com/madhan/byox/internal/progress"
-	"github.com/madhan/byox/internal/runner"
-	"github.com/madhan/byox/internal/tui"
+	"github.com/madhank93/byox/course"
+	"github.com/madhank93/byox/internal/progress"
+	"github.com/madhank93/byox/internal/runner"
+	"github.com/madhank93/byox/internal/tui"
 )
 
 const usage = `byox — local CodeCrafters-style course runner
