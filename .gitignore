@@ -6,3 +6,7 @@ progress.json
 
 # authoring build artifacts
 reference-solutions/*-work/app/app
+
+# `go build ./...` drops binaries next to their package
+/engine/byox
+/web/gen/gen

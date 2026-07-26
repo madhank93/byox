@@ -17,10 +17,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/madhan/byox/course"
-	"github.com/madhan/byox/diff"
-	"github.com/madhan/byox/internal/progress"
-	"github.com/madhan/byox/internal/runner"
+	"github.com/madhank93/byox/course"
+	"github.com/madhank93/byox/diff"
+	"github.com/madhank93/byox/internal/progress"
+	"github.com/madhank93/byox/internal/runner"
 )
 
 type rightMode int

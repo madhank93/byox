@@ -1,4 +1,4 @@
-module github.com/madhan/byox
+module github.com/madhank93/byox
 
 go 1.25.1
 
