@@ -1,6 +1,12 @@
+/* Keep the splash hero logo modest — Starlight sizes the hero image to the
+   column, which renders the raw asset far larger than it needs to be. */
+.hero img {
+	max-width: 160px;
+	margin-inline: auto;
+}
+
 /* Trim the large empty gap around the splash hero — Starlight's default
-   padding-block ramps up to 10rem. There's no hero image here, so the
-   hero is text-only and doesn't need the extra room. */
+   padding-block ramps up to 10rem. */
 [data-has-hero] .hero {
 	padding-block: clamp(1.5rem, 4vmin, 3.5rem);
 }
