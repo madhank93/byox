@@ -17,6 +17,7 @@ export default defineConfig({
 		starlight({
 			title: 'byox',
 			description: DESCRIPTION,
+			logo: { src: './src/assets/byox.svg' },
 			customCss: ['./src/styles/hero.css'],
 			favicon: '/favicon.svg',
 			social: [
