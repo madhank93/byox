@@ -1,0 +1,19 @@
+KEYS
+
+  ↑ ↓ / k j    move between stages
+  enter        fold or unfold a course
+  t            run the tests for the selected stage
+  e            open the stage's files in $EDITOR
+  s            show the reference solution
+  c            jump to the current stage
+  /            filter        esc  clear
+  J / K        scroll the right pane
+  ?            this help     q    quit
+
+WHILE TESTS RUN
+
+  The right pane's title shows a spinner and the elapsed time. A test run that
+  has wedged looks exactly like a slow one without that clock, so watch the
+  seconds.
+
+  Saving a file reruns the tests, so the loop is: edit, save, watch the pane.
