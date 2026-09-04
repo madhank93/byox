@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -85,7 +86,17 @@ func main() {
 var (
 	mu    sync.Mutex
 	store = map[string]entry{}
+
+	// versions counts modifications per key. A version beats storing a copy
+	// of the value: it is cheap, and it still catches a write that set the
+	// key back to what it was. Bumped under mu, alongside the mutation it
+	// describes.
+	versions = map[string]uint64{}
 )
+
+func bumpVersion(key string) {
+	versions[key]++
+}
 
 // entry is a stored value with an optional deadline. Expiry is lazy: nothing
 // sweeps the keyspace, a read treats an expired key as missing.
@@ -269,8 +280,40 @@ func parseStreamID(id string) (uint64, uint64, bool) {
 
 var streams = map[string][]streamEntry{}
 
+// client is one connection's own state. A transaction belongs to the
+// connection that opened it, never to the server, so it lives here.
+type client struct {
+	w       io.Writer
+	inMulti bool
+	queued  [][]string
+
+	// watched maps a key to the version this connection saw when it was
+	// watched, so EXEC can tell whether anyone has since changed it.
+	watched map[string]uint64
+}
+
+// resetTransaction returns the connection to its baseline. Every exit from a
+// transaction goes through here, so commit and abort cannot drift apart.
+// watchConflict reports whether any watched key changed since it was watched.
+func (c *client) watchConflict() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for key, seen := range c.watched {
+		if versions[key] != seen {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *client) resetTransaction() {
+	c.inMulti = false
+	c.queued = nil
+}
+
 func handleConn(conn net.Conn) {
 	defer conn.Close()
+	c := &client{w: conn}
 	r := bufio.NewReader(conn)
 	for {
 		args, err := readCommand(r)
@@ -283,7 +326,95 @@ func handleConn(conn net.Conn) {
 		if len(args) == 0 {
 			continue
 		}
-		execute(conn, args)
+		dispatch(c, args)
+	}
+}
+
+// dispatch handles the commands that act on the connection itself, then
+// delegates the rest to execute.
+func dispatch(c *client, args []string) {
+	switch strings.ToUpper(args[0]) {
+	case "MULTI":
+		c.inMulti = true
+		c.w.Write([]byte("+OK\r\n"))
+	case "EXEC":
+		// A command's validity now depends on what came before on this
+		// connection, not on its arguments alone.
+		if !c.inMulti {
+			c.w.Write([]byte("-ERR EXEC without MULTI\r\n"))
+			return
+		}
+		batch := c.queued
+		conflicted := c.watchConflict()
+		// The watches existed to protect this transaction; carrying them
+		// forward would abandon a later one for a change already accounted
+		// for. Both outcomes — committed and abandoned — clear them.
+		c.watched = nil
+		c.resetTransaction()
+		if conflicted {
+			// A null array, distinct from the empty array of an untouched
+			// empty transaction.
+			c.w.Write([]byte("*-1\r\n"))
+			return
+		}
+
+		// A failing command does not abandon the transaction: its error is
+		// one element of the reply and the rest still run. Redis transactions
+		// guarantee isolation and ordering, not rollback.
+		var body bytes.Buffer
+		for _, qargs := range batch {
+			execute(&body, qargs)
+		}
+		// An empty array, not a null array and not +OK — RESP distinguishes
+		// "no elements" from "no value".
+		fmt.Fprintf(c.w, "*%d\r\n", len(batch))
+		c.w.Write(body.Bytes())
+	case "WATCH":
+		// Watching is what you do before deciding what to queue, so a watch
+		// registered after that decision could protect nothing.
+		if c.inMulti {
+			c.w.Write([]byte("-ERR WATCH inside MULTI is not allowed\r\n"))
+			return
+		}
+		// Optimistic concurrency: no lock is taken, the conflict is detected
+		// at commit time instead.
+		if c.watched == nil {
+			c.watched = map[string]uint64{}
+		}
+		mu.Lock()
+		// One WATCH can name several keys, and any one of them changing is
+		// enough to abandon the transaction.
+		for _, key := range args[1:] {
+			// Absence is a state like any other: a key that does not exist
+			// yet is at version 0, and creating it counts as a change.
+			c.watched[key] = versions[key]
+		}
+		mu.Unlock()
+		c.w.Write([]byte("+OK\r\n"))
+	case "UNWATCH":
+		// The watch set is per-connection and outlives any single MULTI
+		// unless it is cleared.
+		c.watched = nil
+		c.w.Write([]byte("+OK\r\n"))
+	case "DISCARD":
+		// Abort and commit must reset exactly the same state, or the
+		// connection is left as no valid sequence could leave it.
+		if !c.inMulti {
+			c.w.Write([]byte("-ERR DISCARD without MULTI\r\n"))
+			return
+		}
+		c.watched = nil
+		c.resetTransaction()
+		c.w.Write([]byte("+OK\r\n"))
+	default:
+		// Inside a transaction the dispatcher stops executing and starts
+		// storing. That interception point is the whole of transactions.
+		if c.inMulti {
+			c.queued = append(c.queued, append([]string(nil), args...))
+			c.w.Write([]byte("+QUEUED\r\n"))
+			return
+		}
+		execute(c.w, args)
 	}
 }
 
@@ -310,6 +441,7 @@ func execute(w io.Writer, args []string) {
 				}
 				mu.Lock()
 				store[args[1]] = e
+				bumpVersion(args[1])
 				mu.Unlock()
 				conn.Write([]byte("+OK\r\n"))
 			}
@@ -347,6 +479,33 @@ func execute(w io.Writer, args []string) {
 			// This connection is no longer a client; it is a destination.
 			if c, ok := w.(net.Conn); ok {
 				addReplica(c)
+			}
+		case "INCR":
+			if len(args) > 1 {
+				// Read-modify-write: the whole sequence happens under one
+				// lock, or two concurrent INCRs produce one increment.
+				mu.Lock()
+				// A missing key is the empty value of the type the command
+				// needs, so a counter needs no initialisation.
+				e, exists := store[args[1]]
+				var n int64
+				if exists {
+					// Redis is dynamically typed but not permissive: the
+					// command validates at execution time and refuses.
+					parsed, err := strconv.ParseInt(e.value, 10, 64)
+					if err != nil {
+						mu.Unlock()
+						conn.Write([]byte("-ERR value is not an integer or out of range\r\n"))
+						return
+					}
+					n = parsed
+				}
+				n++
+				e.value = strconv.FormatInt(n, 10)
+				store[args[1]] = e
+				bumpVersion(args[1])
+				mu.Unlock()
+				fmt.Fprintf(conn, ":%d\r\n", n)
 			}
 		case "TYPE":
 			if len(args) > 1 {
