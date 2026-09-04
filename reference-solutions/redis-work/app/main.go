@@ -280,6 +280,10 @@ func parseStreamID(id string) (uint64, uint64, bool) {
 
 var streams = map[string][]streamEntry{}
 
+// lists holds the list type. Redis has no CREATE: the first write to a key
+// defines its type.
+var lists = map[string][]string{}
+
 // client is one connection's own state. A transaction belongs to the
 // connection that opened it, never to the server, so it lives here.
 type client struct {
@@ -506,6 +510,165 @@ func execute(w io.Writer, args []string) {
 				bumpVersion(args[1])
 				mu.Unlock()
 				fmt.Fprintf(conn, ":%d\r\n", n)
+			}
+		case "RPUSH":
+			if len(args) > 2 {
+				mu.Lock()
+				// Variadic: three appends in one command is one round trip
+				// instead of three.
+				lists[args[1]] = append(lists[args[1]], args[2:]...)
+				n := len(lists[args[1]])
+				bumpVersion(args[1])
+				mu.Unlock()
+				fmt.Fprintf(conn, ":%d\r\n", n)
+			}
+		case "LPUSH":
+			if len(args) > 2 {
+				mu.Lock()
+				// Each element is pushed in turn, so the arguments end up
+				// reversed at the head.
+				for _, v := range args[2:] {
+					lists[args[1]] = append([]string{v}, lists[args[1]]...)
+				}
+				n := len(lists[args[1]])
+				bumpVersion(args[1])
+				mu.Unlock()
+				fmt.Fprintf(conn, ":%d\r\n", n)
+			}
+		case "BLPOP":
+			if len(args) > 2 {
+				key := args[1]
+				// The timeout is in seconds as a float here — XREAD's BLOCK
+				// took integer milliseconds. Zero still means wait forever.
+				secs, err := strconv.ParseFloat(args[2], 64)
+				if err != nil {
+					conn.Write([]byte("-ERR timeout is not a float or out of range\r\n"))
+					return
+				}
+				deadline := time.Time{}
+				if secs > 0 {
+					deadline = time.Now().Add(time.Duration(secs * float64(time.Second)))
+				}
+				for deadline.IsZero() || time.Now().Before(deadline) {
+					// Check and pop under one lock: checking, releasing, then
+					// popping is how two blocked clients receive the same
+					// element.
+					mu.Lock()
+					list := lists[key]
+					if len(list) > 0 {
+						head := list[0]
+						if rest := list[1:]; len(rest) == 0 {
+							delete(lists, key)
+						} else {
+							lists[key] = rest
+						}
+						bumpVersion(key)
+						mu.Unlock()
+						conn.Write(arrayOf(bulkString(key), bulkString(head)))
+						return
+					}
+					mu.Unlock()
+					// The sleep is outside the lock: a waiter holding it
+					// would deadlock the writer that would unblock it.
+					time.Sleep(20 * time.Millisecond)
+				}
+				conn.Write([]byte("*-1\r\n"))
+			}
+		case "LPOP":
+			if len(args) > 1 {
+				mu.Lock()
+				list := lists[args[1]]
+				if len(list) == 0 {
+					mu.Unlock()
+					conn.Write([]byte("$-1\r\n"))
+					return
+				}
+				// With a count the reply is an array; without one it is a
+				// bare bulk string. "Supplied as 1" and "not supplied" are
+				// different replies.
+				if len(args) > 2 {
+					count, err := strconv.Atoi(args[2])
+					if err != nil {
+						mu.Unlock()
+						conn.Write([]byte("-ERR value is not an integer or out of range\r\n"))
+						return
+					}
+					if count > len(list) {
+						count = len(list)
+					}
+					popped := list[:count]
+					if rest := list[count:]; len(rest) == 0 {
+						delete(lists, args[1])
+					} else {
+						lists[args[1]] = rest
+					}
+					bumpVersion(args[1])
+					mu.Unlock()
+					parts := make([][]byte, 0, len(popped))
+					for _, v := range popped {
+						parts = append(parts, bulkString(v))
+					}
+					conn.Write(arrayOf(parts...))
+					return
+				}
+				head := list[0]
+				rest := list[1:]
+				// A list that empties is deleted, not kept as an empty list,
+				// so TYPE and EXISTS report it as missing.
+				if len(rest) == 0 {
+					delete(lists, args[1])
+				} else {
+					lists[args[1]] = rest
+				}
+				bumpVersion(args[1])
+				mu.Unlock()
+				conn.Write(bulkString(head))
+			}
+		case "LLEN":
+			if len(args) > 1 {
+				mu.Lock()
+				n := len(lists[args[1]])
+				mu.Unlock()
+				fmt.Fprintf(conn, ":%d\r\n", n)
+			}
+		case "LRANGE":
+			if len(args) > 3 {
+				start, err1 := strconv.Atoi(args[2])
+				stop, err2 := strconv.Atoi(args[3])
+				if err1 != nil || err2 != nil {
+					conn.Write([]byte("-ERR value is not an integer or out of range\r\n"))
+					return
+				}
+				mu.Lock()
+				list := lists[args[1]]
+				mu.Unlock()
+
+				// Both ends are inclusive, and out-of-range bounds clamp
+				// rather than error — that is what lets a client page through
+				// a list without knowing its length.
+				// A negative index counts from the end; normalise first, then
+				// the bounds logic below is unchanged.
+				if start < 0 {
+					start += len(list)
+				}
+				if stop < 0 {
+					stop += len(list)
+				}
+				if start < 0 {
+					start = 0
+				}
+				if stop >= len(list) {
+					stop = len(list) - 1
+				}
+				if start > stop || start >= len(list) {
+					conn.Write([]byte("*0\r\n"))
+					return
+				}
+				parts := make([][]byte, 0, stop-start+1)
+				for _, v := range list[start : stop+1] {
+					parts = append(parts, bulkString(v))
+				}
+				conn.Write(arrayOf(parts...))
 			}
 		case "TYPE":
 			if len(args) > 1 {
