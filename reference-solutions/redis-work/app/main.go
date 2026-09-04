@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,6 +281,27 @@ func parseStreamID(id string) (uint64, uint64, bool) {
 
 var streams = map[string][]streamEntry{}
 
+// sortedMembers returns a set's members in rank order: by score, and for
+// equal scores lexicographically by member, so ranks are total and stable.
+func sortedMembers(set map[string]float64) []string {
+	members := make([]string, 0, len(set))
+	for m := range set {
+		members = append(members, m)
+	}
+	sort.Slice(members, func(i, j int) bool {
+		si, sj := set[members[i]], set[members[j]]
+		if si != sj {
+			return si < sj
+		}
+		return members[i] < members[j]
+	})
+	return members
+}
+
+// zsets holds the sorted-set type: unique members, each with a score, ordered
+// by score with ties broken lexicographically by member.
+var zsets = map[string]map[string]float64{}
+
 // lists holds the list type. Redis has no CREATE: the first write to a key
 // defines its type.
 var lists = map[string][]string{}
@@ -294,6 +316,52 @@ type client struct {
 	// watched maps a key to the version this connection saw when it was
 	// watched, so EXEC can tell whether anyone has since changed it.
 	watched map[string]uint64
+
+	// channels is this connection's subscription set.
+	channels map[string]bool
+
+	// writeMu serialises writes to this connection. Delivery happens from
+	// the publisher's goroutine, so two publishers would otherwise interleave
+	// halves of two messages into one subscriber's stream.
+	writeMu sync.Mutex
+}
+
+// subscribers maps a channel to the connections listening on it. A publisher
+// writes into other connections, so both this map and each connection's
+// writes need guarding.
+var (
+	subsMu      sync.Mutex
+	subscribers = map[string][]*client{}
+)
+
+// unsubscribe removes the subscription from both registries. A stale entry in
+// the server map means writing to a connection that no longer expects
+// messages.
+func (c *client) unsubscribe(channel string) {
+	delete(c.channels, channel)
+	subsMu.Lock()
+	defer subsMu.Unlock()
+	kept := subscribers[channel][:0]
+	for _, sub := range subscribers[channel] {
+		if sub != c {
+			kept = append(kept, sub)
+		}
+	}
+	if len(kept) == 0 {
+		delete(subscribers, channel)
+		return
+	}
+	subscribers[channel] = kept
+}
+
+func (c *client) subscribe(channel string) {
+	if c.channels == nil {
+		c.channels = map[string]bool{}
+	}
+	c.channels[channel] = true
+	subsMu.Lock()
+	subscribers[channel] = append(subscribers[channel], c)
+	subsMu.Unlock()
 }
 
 // resetTransaction returns the connection to its baseline. Every exit from a
@@ -336,8 +404,22 @@ func handleConn(conn net.Conn) {
 
 // dispatch handles the commands that act on the connection itself, then
 // delegates the rest to execute.
+// subscribedAllowed is the command set a subscribed connection keeps. Once
+// messages arrive unprompted, a client can no longer match replies to
+// requests, so the rest are refused.
+var subscribedAllowed = map[string]bool{
+	"SUBSCRIBE": true, "UNSUBSCRIBE": true, "PSUBSCRIBE": true,
+	"PUNSUBSCRIBE": true, "PING": true, "QUIT": true, "RESET": true,
+}
+
 func dispatch(c *client, args []string) {
-	switch strings.ToUpper(args[0]) {
+	name := strings.ToUpper(args[0])
+	if len(c.channels) > 0 && !subscribedAllowed[name] {
+		fmt.Fprintf(c.w, "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
+			strings.ToLower(args[0]))
+		return
+	}
+	switch name {
 	case "MULTI":
 		c.inMulti = true
 		c.w.Write([]byte("+OK\r\n"))
@@ -373,6 +455,47 @@ func dispatch(c *client, args []string) {
 		// "no elements" from "no value".
 		fmt.Fprintf(c.w, "*%d\r\n", len(batch))
 		c.w.Write(body.Bytes())
+	case "PING":
+		// Everything arriving on a subscribed connection is an array, so a
+		// client can read messages uniformly with no special case.
+		if len(c.channels) > 0 {
+			c.w.Write(arrayOf(bulkString("pong"), bulkString("")))
+			return
+		}
+		execute(c.w, args)
+	case "PUBLISH":
+		if len(args) > 2 {
+			subsMu.Lock()
+			targets := append([]*client(nil), subscribers[args[1]]...)
+			subsMu.Unlock()
+
+			// Copy first, then write: the publisher may itself be one of the
+			// subscribers, and a non-reentrant lock would deadlock.
+			message := arrayOf(bulkString("message"), bulkString(args[1]), bulkString(args[2]))
+			for _, sub := range targets {
+				sub.writeMu.Lock()
+				sub.w.Write(message)
+				sub.writeMu.Unlock()
+			}
+			n := len(targets)
+			// The count is the publisher's only feedback: delivery is
+			// fire-and-forget, and 0 means the message is simply gone.
+			fmt.Fprintf(c.w, ":%d\r\n", n)
+		}
+	case "SUBSCRIBE":
+		for _, channel := range args[1:] {
+			c.subscribe(channel)
+			// The count is per connection and grows as subscriptions
+			// accumulate — a set, so subscribing twice does not count twice.
+			c.w.Write(arrayOf(bulkString("subscribe"), bulkString(channel),
+				[]byte(fmt.Sprintf(":%d\r\n", len(c.channels)))))
+		}
+	case "UNSUBSCRIBE":
+		for _, channel := range args[1:] {
+			c.unsubscribe(channel)
+			c.w.Write(arrayOf(bulkString("unsubscribe"), bulkString(channel),
+				[]byte(fmt.Sprintf(":%d\r\n", len(c.channels)))))
+		}
 	case "WATCH":
 		// Watching is what you do before deciding what to queue, so a watch
 		// registered after that decision could protect nothing.
@@ -669,6 +792,121 @@ func execute(w io.Writer, args []string) {
 					parts = append(parts, bulkString(v))
 				}
 				conn.Write(arrayOf(parts...))
+			}
+		case "ZADD":
+			if len(args) > 3 {
+				score, err := strconv.ParseFloat(args[2], 64)
+				if err != nil {
+					conn.Write([]byte("-ERR value is not a valid float\r\n"))
+					return
+				}
+				mu.Lock()
+				set := zsets[args[1]]
+				if set == nil {
+					set = map[string]float64{}
+					zsets[args[1]] = set
+				}
+				member := args[3]
+				// Members are unique, so adding one that is already there
+				// updates its score and counts as 0 added. The reply
+				// describes the set's growth, not whether anything changed.
+				_, existed := set[member]
+				set[member] = score
+				bumpVersion(args[1])
+				mu.Unlock()
+				if existed {
+					conn.Write([]byte(":0\r\n"))
+					return
+				}
+				conn.Write([]byte(":1\r\n"))
+			}
+		case "ZRANGE":
+			if len(args) > 3 {
+				start, err1 := strconv.Atoi(args[2])
+				stop, err2 := strconv.Atoi(args[3])
+				if err1 != nil || err2 != nil {
+					conn.Write([]byte("-ERR value is not an integer or out of range\r\n"))
+					return
+				}
+				mu.Lock()
+				members := sortedMembers(zsets[args[1]])
+				mu.Unlock()
+				// Same inclusive, clamping range rules as LRANGE, negative
+				// indexes included — Redis is consistent across its range
+				// commands, so one normalisation serves both.
+				if start < 0 {
+					start += len(members)
+				}
+				if stop < 0 {
+					stop += len(members)
+				}
+				if start < 0 {
+					start = 0
+				}
+				if stop >= len(members) {
+					stop = len(members) - 1
+				}
+				if start > stop || start >= len(members) {
+					conn.Write([]byte("*0\r\n"))
+					return
+				}
+				parts := make([][]byte, 0, stop-start+1)
+				for _, m := range members[start : stop+1] {
+					parts = append(parts, bulkString(m))
+				}
+				conn.Write(arrayOf(parts...))
+			}
+		case "ZREM":
+			if len(args) > 2 {
+				mu.Lock()
+				set := zsets[args[1]]
+				removed := 0
+				if _, ok := set[args[2]]; ok {
+					delete(set, args[2])
+					removed = 1
+				}
+				// A sorted set that loses its last member is deleted, like a
+				// list that empties.
+				if len(set) == 0 {
+					delete(zsets, args[1])
+				}
+				bumpVersion(args[1])
+				mu.Unlock()
+				fmt.Fprintf(conn, ":%d\r\n", removed)
+			}
+		case "ZSCORE":
+			if len(args) > 2 {
+				mu.Lock()
+				score, ok := zsets[args[1]][args[2]]
+				mu.Unlock()
+				if !ok {
+					conn.Write([]byte("$-1\r\n"))
+					return
+				}
+				// RESP2 has no float type, so the score is text — and
+				// precision -1 picks the shortest form that parses back
+				// exactly, never scientific notation.
+				conn.Write(bulkString(strconv.FormatFloat(score, 'f', -1, 64)))
+			}
+		case "ZCARD":
+			if len(args) > 1 {
+				mu.Lock()
+				n := len(zsets[args[1]])
+				mu.Unlock()
+				fmt.Fprintf(conn, ":%d\r\n", n)
+			}
+		case "ZRANK":
+			if len(args) > 2 {
+				mu.Lock()
+				members := sortedMembers(zsets[args[1]])
+				mu.Unlock()
+				for i, m := range members {
+					if m == args[2] {
+						fmt.Fprintf(conn, ":%d\r\n", i)
+						return
+					}
+				}
+				conn.Write([]byte("$-1\r\n"))
 			}
 		case "TYPE":
 			if len(args) > 1 {
