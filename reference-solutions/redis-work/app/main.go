@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -93,6 +94,181 @@ type entry struct {
 	expireAt time.Time // zero means no expiry
 }
 
+// streamEntry is one entry of a stream: an id and the field/value pairs that
+// came with it. Ids are ordered, so a stream is sorted by construction.
+type streamEntry struct {
+	ms, seq uint64
+	fields  []string
+}
+
+func (e streamEntry) id() string {
+	return strconv.FormatUint(e.ms, 10) + "-" + strconv.FormatUint(e.seq, 10)
+}
+
+// resolveDollarIDs replaces each "$" id with the stream's current last id, or
+// 0-0 when the stream is empty.
+func resolveDollarIDs(args []string) []string {
+	if len(args) < 4 || !strings.EqualFold(args[1], "streams") {
+		return args
+	}
+	out := append([]string(nil), args...)
+	rest := out[2:]
+	half := len(rest) / 2
+	keys, ids := rest[:half], rest[half:]
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, id := range ids {
+		if id != "$" {
+			continue
+		}
+		entries := streams[keys[i]]
+		if n := len(entries); n > 0 {
+			ids[i] = entries[n-1].id()
+		} else {
+			ids[i] = "0-0"
+		}
+	}
+	return out
+}
+
+// tryXRead performs one non-blocking XREAD pass, reporting whether anything
+// was found. The blocking form is this check on a timer.
+func tryXRead(args []string) ([]byte, bool) {
+	if len(args) < 4 || !strings.EqualFold(args[1], "streams") {
+		return nil, false
+	}
+	rest := args[2:]
+	half := len(rest) / 2
+	keys, ids := rest[:half], rest[half:]
+
+	var results [][]byte
+	mu.Lock()
+	for i, key := range keys {
+		ms, seq, ok := parseRangeID(ids[i], true)
+		if !ok {
+			continue
+		}
+		if parts := readStreamAfter(streams[key], ms, seq); len(parts) > 0 {
+			results = append(results, arrayOf(bulkString(key), arrayOf(parts...)))
+		}
+	}
+	mu.Unlock()
+	if len(results) == 0 {
+		return nil, false
+	}
+	return arrayOf(results...), true
+}
+
+// readStreamAfter returns the entries strictly after the given id. XREAD's
+// bound is exclusive — a consumer resuming from the last id it saw must not
+// receive it again.
+func readStreamAfter(entries []streamEntry, ms, seq uint64) [][]byte {
+	var parts [][]byte
+	for _, e := range entries {
+		if less(ms, seq, e.ms, e.seq) {
+			parts = append(parts, encodeStreamEntry(e))
+		}
+	}
+	return parts
+}
+
+// less reports whether id a sorts before id b.
+func less(aMS, aSeq, bMS, bSeq uint64) bool {
+	if aMS != bMS {
+		return aMS < bMS
+	}
+	return aSeq < bSeq
+}
+
+// parseRangeID reads an XRANGE bound. A bare millisecond means sequence 0 at
+// the start of a range and the largest sequence at the end.
+func parseRangeID(id string, isStart bool) (uint64, uint64, bool) {
+	// "-" is a sentinel for the smallest possible id. Normalising it here
+	// keeps the range scan itself single-path.
+	if id == "-" {
+		return 0, 0, true
+	}
+	// "+" is its mirror: the largest possible id, fixed rather than derived
+	// from the stream's current last entry, so the bound cannot shift.
+	if id == "+" {
+		return math.MaxUint64, math.MaxUint64, true
+	}
+	if ms, seq, ok := parseStreamID(id); ok {
+		return ms, seq, true
+	}
+	ms, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	if isStart {
+		return ms, 0, true
+	}
+	return ms, math.MaxUint64, true
+}
+
+// encodeStreamEntry renders one entry as [id, [field, value, …]].
+func encodeStreamEntry(e streamEntry) []byte {
+	fields := make([][]byte, len(e.fields))
+	for i, f := range e.fields {
+		fields[i] = bulkString(f)
+	}
+	return arrayOf(bulkString(e.id()), arrayOf(fields...))
+}
+
+// resolveStreamID turns an XADD id argument into concrete numbers, expanding
+// a "<ms>-*" request into the next sequence for that millisecond. Resolving
+// before validating means auto-generated and explicit ids run the same checks.
+func resolveStreamID(id string, existing []streamEntry) (uint64, uint64, bool) {
+	if id == "*" {
+		// Wall-clock time, but never an id that would not increase: within
+		// one millisecond the sequence carries the ordering.
+		ms := uint64(time.Now().UnixMilli())
+		if n := len(existing); n > 0 && existing[n-1].ms >= ms {
+			last := existing[n-1]
+			return last.ms, last.seq + 1, true
+		}
+		return ms, 0, true
+	}
+	if msText, seqText, found := strings.Cut(id, "-"); found && seqText == "*" {
+		ms, err := strconv.ParseUint(msText, 10, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		for i := len(existing) - 1; i >= 0; i-- {
+			if existing[i].ms == ms {
+				return ms, existing[i].seq + 1, true
+			}
+		}
+		// A fresh millisecond starts at 0 — except at millisecond 0, where
+		// 0-0 is forbidden.
+		if ms == 0 {
+			return 0, 1, true
+		}
+		return ms, 0, true
+	}
+	return parseStreamID(id)
+}
+
+// parseStreamID splits an explicit "<ms>-<seq>" id.
+func parseStreamID(id string) (uint64, uint64, bool) {
+	msText, seqText, found := strings.Cut(id, "-")
+	if !found {
+		return 0, 0, false
+	}
+	ms, err := strconv.ParseUint(msText, 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	seq, err := strconv.ParseUint(seqText, 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	return ms, seq, true
+}
+
+var streams = map[string][]streamEntry{}
+
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
@@ -171,6 +347,140 @@ func execute(w io.Writer, args []string) {
 			// This connection is no longer a client; it is a destination.
 			if c, ok := w.(net.Conn); ok {
 				addReplica(c)
+			}
+		case "TYPE":
+			if len(args) > 1 {
+				mu.Lock()
+				_, isString := store[args[1]]
+				_, isStream := streams[args[1]]
+				mu.Unlock()
+				switch {
+				case isStream:
+					conn.Write([]byte("+stream\r\n"))
+				case isString:
+					conn.Write([]byte("+string\r\n"))
+				default:
+					conn.Write([]byte("+none\r\n"))
+				}
+			}
+		case "XADD":
+			if len(args) > 2 {
+				mu.Lock()
+				ms, seq, ok := resolveStreamID(args[2], streams[args[1]])
+				if !ok {
+					mu.Unlock()
+					conn.Write([]byte("-ERR Invalid stream ID specified as stream command argument\r\n"))
+					return
+				}
+				// Two invariants make a stream a log rather than a bag: ids
+				// strictly increase, and 0-0 is reserved as the sentinel
+				// meaning "before everything".
+				if ms == 0 && seq == 0 {
+					mu.Unlock()
+					conn.Write([]byte("-ERR The ID specified in XADD must be greater than 0-0\r\n"))
+					return
+				}
+				existing := streams[args[1]]
+				if n := len(existing); n > 0 {
+					last := existing[n-1]
+					if ms < last.ms || (ms == last.ms && seq <= last.seq) {
+						mu.Unlock()
+						conn.Write([]byte("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"))
+						return
+					}
+				}
+				e := streamEntry{ms: ms, seq: seq, fields: args[3:]}
+				streams[args[1]] = append(existing, e)
+				mu.Unlock()
+				conn.Write(bulkString(e.id()))
+			}
+		case "XRANGE":
+			if len(args) > 3 {
+				startMS, startSeq, ok1 := parseRangeID(args[2], true)
+				endMS, endSeq, ok2 := parseRangeID(args[3], false)
+				if !ok1 || !ok2 {
+					conn.Write([]byte("-ERR Invalid stream ID specified as stream command argument\r\n"))
+					return
+				}
+				mu.Lock()
+				entries := streams[args[1]]
+				parts := make([][]byte, 0, len(entries))
+				for _, e := range entries {
+					// Both ends are inclusive.
+					if less(e.ms, e.seq, startMS, startSeq) || less(endMS, endSeq, e.ms, e.seq) {
+						continue
+					}
+					parts = append(parts, encodeStreamEntry(e))
+				}
+				mu.Unlock()
+				conn.Write(arrayOf(parts...))
+			}
+		case "XREAD":
+			rest := args[1:]
+			// BLOCK <ms> precedes the streams keyword when present.
+			blockMS, blocking := -1, false
+			if len(rest) > 2 && strings.EqualFold(rest[0], "BLOCK") {
+				if ms, err := strconv.Atoi(rest[1]); err == nil {
+					blockMS, blocking = ms, true
+				}
+				rest = rest[2:]
+				args = append([]string{args[0]}, rest...)
+			}
+			if blocking {
+				// "$" means "entries added after this call started", so it is
+				// resolved once, now — re-resolving inside the wait loop would
+				// silently drop anything added in between.
+				args = resolveDollarIDs(args)
+
+				// BLOCK 0 means wait indefinitely, so the deadline is only
+				// computed when a timeout was actually given.
+				deadline := time.Time{}
+				if blockMS > 0 {
+					deadline = time.Now().Add(time.Duration(blockMS) * time.Millisecond)
+				}
+				for deadline.IsZero() || time.Now().Before(deadline) {
+					if out, ok := tryXRead(args); ok {
+						conn.Write(out)
+						return
+					}
+					// The keyspace lock is never held across the sleep: a
+					// blocked reader holding it would deadlock the writer
+					// that would unblock it.
+					time.Sleep(20 * time.Millisecond)
+				}
+				if out, ok := tryXRead(args); ok {
+					conn.Write(out)
+					return
+				}
+				conn.Write([]byte("*-1\r\n"))
+				return
+			}
+			if len(args) > 3 && strings.EqualFold(args[1], "streams") {
+				// Every key comes first, then every id — so the tail splits
+				// in half without knowing how many streams were asked for.
+				rest := args[2:]
+				half := len(rest) / 2
+				keys, ids := rest[:half], rest[half:]
+
+				var results [][]byte
+				mu.Lock()
+				for i, key := range keys {
+					ms, seq, ok := parseRangeID(ids[i], true)
+					if !ok {
+						continue
+					}
+					// A stream with nothing new is left out of the reply
+					// entirely rather than included as an empty array.
+					if parts := readStreamAfter(streams[key], ms, seq); len(parts) > 0 {
+						results = append(results, arrayOf(bulkString(key), arrayOf(parts...)))
+					}
+				}
+				mu.Unlock()
+				if len(results) == 0 {
+					conn.Write([]byte("*-1\r\n"))
+					return
+				}
+				conn.Write(arrayOf(results...))
 			}
 		case "INFO":
 			// INFO answers with one bulk string of newline-separated
