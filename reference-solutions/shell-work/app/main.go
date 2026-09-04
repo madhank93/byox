@@ -41,17 +41,7 @@ var builtins = map[string]bool{
 	"pwd":      true,
 	"cd":       true,
 	"complete": true,
-	"jobs":     true,
 }
-
-// Job tracks one background command started with a trailing "&".
-type Job struct {
-	Number int
-	Cmd    *exec.Cmd
-}
-
-var jobs []*Job
-var nextJobNumber = 1
 
 func isBuiltin(name string) bool {
 	return builtins[name]
@@ -171,13 +161,7 @@ func extractRedirection(tokens []string) (cmd []string, stdoutFile string, stdou
 }
 
 func runLine(line string) {
-	tokens := parseArgs(line)
-	background := false
-	if len(tokens) > 0 && tokens[len(tokens)-1] == "&" {
-		background = true
-		tokens = tokens[:len(tokens)-1]
-	}
-	fields, stdoutFile, stdoutAppend, stderrFile, stderrAppend := extractRedirection(tokens)
+	fields, stdoutFile, stdoutAppend, stderrFile, stderrAppend := extractRedirection(parseArgs(line))
 	if len(fields) == 0 {
 		return
 	}
@@ -250,10 +234,7 @@ func runLine(line string) {
 			}
 		} else if len(args) >= 3 && args[0] == "-C" {
 			completers[args[2]] = args[1]
-		} else if len(args) >= 2 && args[0] == "-r" {
-			delete(completers, args[1])
 		}
-	case "jobs":
 	default:
 		path, err := exec.LookPath(command)
 		if err != nil {
@@ -265,18 +246,7 @@ func runLine(line string) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
-		if background {
-			if err := cmd.Start(); err != nil {
-				fmt.Printf("%s: %v\n", command, err)
-				return
-			}
-			job := &Job{Number: nextJobNumber, Cmd: cmd}
-			nextJobNumber++
-			jobs = append(jobs, job)
-			fmt.Printf("[%d] %d\n", job.Number, cmd.Process.Pid)
-		} else {
-			cmd.Run()
-		}
+		cmd.Run()
 	}
 }
 
