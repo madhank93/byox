@@ -790,6 +790,11 @@ func (p *Parser) parseStatement() (Stmt, error) {
 		var elseBranch Stmt
 		if p.tokens[p.pos].Type == "ELSE" {
 			p.pos++
+			// Chaining `else if` comes next stage; for now `else` takes a
+			// block or a plain statement.
+			if p.tokens[p.pos].Type == "IF" {
+				return nil, fmt.Errorf("[line %d] Error at 'if': Expect expression.", p.tokens[p.pos].Line)
+			}
 			elseBranch, err = p.parseStatement()
 			if err != nil {
 				return nil, err

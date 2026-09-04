@@ -301,11 +301,9 @@ func stringifyValue(v interface{}) string {
 			return "true"
 		}
 		return "false"
-	case float64:
-		return formatLoxNumber(val)
-	case string:
-		return val
 	default:
+		// Booleans and nil are the values the evaluator names explicitly so
+		// far; the next stage handles strings and Lox's number formatting.
 		return fmt.Sprintf("%v", val)
 	}
 }

@@ -81,6 +81,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, perr)
 			os.Exit(65)
 		}
+		// One statement for now; the next stage runs the whole program.
+		if len(stmts) > 1 {
+			stmts = stmts[:1]
+		}
 		for _, stmt := range stmts {
 			if everr := execute(stmt); everr != nil {
 				fmt.Fprintln(os.Stderr, everr)

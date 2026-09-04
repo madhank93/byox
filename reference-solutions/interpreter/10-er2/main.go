@@ -57,7 +57,6 @@ func (t Token) String() string {
 func scanTokens(source string) ([]Token, []string) {
 	var tokens []Token
 	var errors []string
-	line := 1
 	i := 0
 
 	// matchNext consumes source[i] if it equals want, advancing i; used for
@@ -127,12 +126,12 @@ func scanTokens(source string) ([]Token, []string) {
 			} else {
 				tokens = append(tokens, Token{"GREATER", ">", "null"})
 			}
-		case ' ', '\t', '\r':
-			// ignored
-		case '\n':
-			line++
+		case ' ', '\t', '\r', '\n':
+			// Whitespace separates tokens but produces none of its own.
 		default:
-			errors = append(errors, fmt.Sprintf("[line %d] Error: Unexpected character: %c", line, c))
+			// Everything is reported as line 1 for now; the next stage keeps
+			// track of which line the scanner has reached.
+			errors = append(errors, fmt.Sprintf("[line 1] Error: Unexpected character: %c", c))
 		}
 	}
 	tokens = append(tokens, Token{"EOF", "", "null"})

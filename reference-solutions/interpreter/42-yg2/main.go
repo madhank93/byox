@@ -642,10 +642,9 @@ func (env *Environment) Define(name string, value interface{}) {
 }
 
 func (env *Environment) Get(name string, line int) (interface{}, error) {
-	if v, ok := env.values[name]; ok {
-		return v, nil
-	}
-	return nil, &RuntimeError{fmt.Sprintf("Undefined variable '%s'.", name), line}
+	// A name that was never declared reads as nil for now; the next stage
+	// makes it the runtime error it should be.
+	return env.values[name], nil
 }
 
 // Stmt is a parsed Lox statement, executed by the "run" command.

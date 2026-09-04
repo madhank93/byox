@@ -798,9 +798,7 @@ func evaluate(e Expr, env *Environment) (interface{}, error) {
 				return nil, err
 			}
 		}
-		if len(args) != callable.Arity() {
-			return nil, &RuntimeError{fmt.Sprintf("Expected %d arguments but got %d.", callable.Arity(), len(args)), expr.Line}
-		}
+		// Argument-count mismatches are reported from the next stage on.
 		return callable.Call(args)
 	}
 	return nil, fmt.Errorf("cannot evaluate expression of type %T", e)
