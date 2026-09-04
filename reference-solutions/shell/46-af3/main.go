@@ -172,11 +172,6 @@ func extractRedirection(tokens []string) (cmd []string, stdoutFile string, stdou
 
 func runLine(line string) {
 	tokens := parseArgs(line)
-	background := false
-	if len(tokens) > 0 && tokens[len(tokens)-1] == "&" {
-		background = true
-		tokens = tokens[:len(tokens)-1]
-	}
 	fields, stdoutFile, stdoutAppend, stderrFile, stderrAppend := extractRedirection(tokens)
 	if len(fields) == 0 {
 		return
@@ -265,18 +260,9 @@ func runLine(line string) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
-		if background {
-			if err := cmd.Start(); err != nil {
-				fmt.Printf("%s: %v\n", command, err)
-				return
-			}
-			job := &Job{Number: nextJobNumber, Cmd: cmd}
-			nextJobNumber++
-			jobs = append(jobs, job)
-			fmt.Printf("[%d] %d\n", job.Number, cmd.Process.Pid)
-		} else {
-			cmd.Run()
-		}
+		// Everything runs in the foreground for now; the next stage starts
+		// commands ending in "&" in the background instead.
+		cmd.Run()
 	}
 }
 

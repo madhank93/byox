@@ -262,10 +262,10 @@ func runLine(line string) {
 		}
 		cmd := exec.Command(path, args...)
 		cmd.Args[0] = command
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
 		if background {
+			// A background job's output is not wired to the terminal yet;
+			// the next stage connects it.
 			if err := cmd.Start(); err != nil {
 				fmt.Printf("%s: %v\n", command, err)
 				return
@@ -275,6 +275,8 @@ func runLine(line string) {
 			jobs = append(jobs, job)
 			fmt.Printf("[%d] %d\n", job.Number, cmd.Process.Pid)
 		} else {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
 			cmd.Run()
 		}
 	}

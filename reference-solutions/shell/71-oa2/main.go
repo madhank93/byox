@@ -69,28 +69,6 @@ var history []string
 // appends what's new since the last flush.
 var historyFlushed int
 
-// shellVars holds variables set via the declare builtin.
-var shellVars = map[string]string{}
-
-// isValidIdentifier reports whether name is a valid shell variable name: a
-// letter or underscore followed by letters, digits, or underscores.
-func isValidIdentifier(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, c := range name {
-		isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-		isDigit := c >= '0' && c <= '9'
-		if i == 0 && !isLetter {
-			return false
-		}
-		if i > 0 && !isLetter && !isDigit {
-			return false
-		}
-	}
-	return true
-}
-
 // nextJobNumber returns the next job number to assign: 1 if the table is
 // empty, otherwise one more than the highest number currently in use.
 // Numbers are recycled as jobs are reaped, so this can't be a monotonic
@@ -472,20 +450,9 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 		}
 	case "declare":
 		if len(args) >= 2 && args[0] == "-p" {
-			name := args[1]
-			if val, ok := shellVars[name]; ok {
-				fmt.Fprintf(out, "declare -- %s=\"%s\"\n", name, val)
-			} else {
-				fmt.Fprintf(out, "declare: %s: not found\n", name)
-			}
-		} else if len(args) >= 1 {
-			if name, val, ok := strings.Cut(args[0], "="); ok {
-				if isValidIdentifier(name) {
-					shellVars[name] = val
-				} else {
-					fmt.Fprintf(out, "declare: `%s': not a valid identifier\n", args[0])
-				}
-			}
+			// Nothing can be set yet, so every name reports as missing;
+			// the next stage stores values for -p to find.
+			fmt.Fprintf(out, "declare: %s: not found\n", args[1])
 		}
 	}
 }

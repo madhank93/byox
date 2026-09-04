@@ -60,6 +60,9 @@ type Job struct {
 
 var jobs []*Job
 
+// shellVars holds variables set via the declare builtin.
+var shellVars = map[string]string{}
+
 // history holds every non-blank line entered, in entry order, 1-indexed
 // when displayed by the history builtin.
 var history []string
@@ -68,28 +71,6 @@ var history []string
 // persisted to disk (via history -w or -a), so a subsequent -a only
 // appends what's new since the last flush.
 var historyFlushed int
-
-// shellVars holds variables set via the declare builtin.
-var shellVars = map[string]string{}
-
-// isValidIdentifier reports whether name is a valid shell variable name: a
-// letter or underscore followed by letters, digits, or underscores.
-func isValidIdentifier(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, c := range name {
-		isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-		isDigit := c >= '0' && c <= '9'
-		if i == 0 && !isLetter {
-			return false
-		}
-		if i > 0 && !isLetter && !isDigit {
-			return false
-		}
-	}
-	return true
-}
 
 // nextJobNumber returns the next job number to assign: 1 if the table is
 // empty, otherwise one more than the highest number currently in use.
@@ -480,11 +461,7 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 			}
 		} else if len(args) >= 1 {
 			if name, val, ok := strings.Cut(args[0], "="); ok {
-				if isValidIdentifier(name) {
-					shellVars[name] = val
-				} else {
-					fmt.Fprintf(out, "declare: `%s': not a valid identifier\n", args[0])
-				}
+				shellVars[name] = val
 			}
 		}
 	}

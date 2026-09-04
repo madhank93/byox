@@ -255,11 +255,17 @@ func runLine(line string) {
 			delete(completers, args[1])
 		}
 	case "jobs":
-		for i, j := range jobs {
+		// Only the most recent job is listed for now; the next stage lists
+		// the whole table.
+		listed := jobs
+		if len(listed) > 1 {
+			listed = listed[len(listed)-1:]
+		}
+		for i, j := range listed {
 			marker := " "
-			if i == len(jobs)-1 {
+			if i == len(listed)-1 {
 				marker = "+"
-			} else if i == len(jobs)-2 {
+			} else if i == len(listed)-2 {
 				marker = "-"
 			}
 			fmt.Printf("[%d]%s  %-24s%s\n", j.Number, marker, "Running", j.Command)
