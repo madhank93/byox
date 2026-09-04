@@ -19,6 +19,7 @@ import (
 
 	"github.com/madhank93/byox/course"
 	"github.com/madhank93/byox/diff"
+	"github.com/madhank93/byox/learn"
 	"github.com/madhank93/byox/internal/progress"
 	"github.com/madhank93/byox/internal/runner"
 )
@@ -29,6 +30,7 @@ const (
 	modeDesc rightMode = iota
 	modeLog
 	modeSolution
+	modeLearn
 )
 
 // byoxMarkdownStyle is glamour's dark theme with the literal "##"/"###"
@@ -117,7 +119,8 @@ type model struct {
 	watcher     *fsnotify.Watcher
 	watchedSlug string
 
-	solutionFull bool // 's' view: diff against previous stage (false) or full file (true)
+	solutionFull bool
+	hintsShown   bool // 's' view: diff against previous stage (false) or full file (true)
 
 	err error
 }
@@ -439,6 +442,58 @@ func (m *model) scopeLine(ci, stageIdx int, content string) string {
 	}
 	return fmt.Sprintf("\n\nCaptured once for stages **%d-%d** as one feature group — this code covers the whole group, not stage %d alone.",
 		stageIdx+1, end, stageIdx+1)
+}
+
+// showLearn renders byox's own teaching content in the right pane: the
+// course primer on a header row, the stage's concept note on a stage row.
+// Coverage is partial by design, so a missing note is answered with what to
+// read instead rather than an error.
+func (m *model) showLearn() {
+	m.mode = modeLearn
+	m.descKey = ""
+	if len(m.rows) == 0 {
+		m.rightVP.SetContent(m.renderMD("_Nothing selected._"))
+		return
+	}
+	r := m.rows[m.cursor]
+	item := m.courses[r.course]
+
+	if r.header {
+		if body, ok := learn.Primer(m.root, item.ref.Slug); ok {
+			m.rightVP.SetContent(m.renderMD(body))
+		} else {
+			m.rightVP.SetContent(m.renderMD("### No primer yet\n\nNo `learn/" +
+				item.ref.Slug + "/index.md` in this checkout. See `learn/README.md` for the format."))
+		}
+		m.rightVP.GotoTop()
+		return
+	}
+
+	st := item.def.Stages[r.stage]
+	if note, ok := learn.Note(m.root, item.ref.Slug, r.stage+1, st.Slug); ok {
+		body, hints := learn.SplitHints(note)
+		switch {
+		case hints == "":
+		case m.hintsShown:
+			body += "\n\n## Hints\n\n" + hints
+		default:
+			body += "\n\n_Hints for this stage are hidden — press `f` to reveal them._"
+		}
+		m.rightVP.SetContent(m.renderMD(body))
+		m.rightVP.GotoTop()
+		return
+	}
+	md := "### No note for this stage yet\n\nbyox's teaching notes are written " +
+		"per stage and this one isn't done — `learn/" + item.ref.Slug + "/" +
+		learn.StageDir(r.stage+1, st.Slug) + ".md`.\n\n"
+	if _, ok := learn.Primer(m.root, item.ref.Slug); ok {
+		md += "The course primer covers the background: move to the **" + item.ref.Name +
+			"** header row and press `n`."
+	} else {
+		md += "See `learn/README.md` for the format if you want to write it."
+	}
+	m.rightVP.SetContent(m.renderMD(md))
+	m.rightVP.GotoTop()
 }
 
 // showSolution renders the reference solution for the cursor's stage into
@@ -788,14 +843,25 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if !m.running {
 			m.showSolution()
 		}
+	case "n":
+		if m.mode == modeLearn {
+			m.descKey = ""
+			m.showDesc()
+		} else {
+			m.showLearn()
+		}
 	case "f":
-		if m.mode == modeSolution {
+		switch m.mode {
+		case modeSolution:
 			m.solutionFull = !m.solutionFull
 			m.showSolution()
+		case modeLearn:
+			m.hintsShown = !m.hintsShown
+			m.showLearn()
 		}
 	case "esc":
 		switch {
-		case (m.mode == modeLog || m.mode == modeSolution) && !m.running:
+		case (m.mode == modeLog || m.mode == modeSolution || m.mode == modeLearn) && !m.running:
 			m.descKey = ""
 			m.showDesc()
 		case m.filter != "":
@@ -847,7 +913,7 @@ func (m *model) toggleFold(ci int) {
 // any cursor movement. Navigating away from a finished test log (or a
 // solution view) returns to the stage instructions.
 func (m *model) afterMove() {
-	if (m.mode == modeLog || m.mode == modeSolution) && !m.running {
+	if (m.mode == modeLog || m.mode == modeSolution || m.mode == modeLearn) && !m.running {
 		m.mode = modeDesc
 		m.descKey = ""
 	}
@@ -1039,6 +1105,14 @@ func (m *model) rightView() string {
 		} else {
 			title = failStyle.Render("FAIL ✗ fix and save to retest (esc → instructions)")
 		}
+	case m.mode == modeLearn:
+		if len(m.rows) > 0 && m.rows[m.cursor].header {
+			title = stageTitleSt.Render("learn · course primer — esc/n back")
+		} else if m.hintsShown {
+			title = stageTitleSt.Render("learn · concepts + hints — esc/n back · f hide hints")
+		} else {
+			title = stageTitleSt.Render("learn · concepts behind this stage — esc/n back · f hints")
+		}
 	case m.mode == modeSolution && m.solutionFull:
 		title = runStyle.Render("⚠ reference solution · full file — esc/s back · f changes only")
 	case m.mode == modeSolution:
@@ -1088,6 +1162,7 @@ func (m *model) footerView() string {
 		[2]string{"t", "test"},
 		[2]string{"e", "edit"},
 		[2]string{"s", "solution"},
+		[2]string{"n", "learn"},
 		[2]string{"/", "filter"},
 		[2]string{"c", "current"},
 		[2]string{"J/K", "scroll"},
