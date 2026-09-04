@@ -18,17 +18,38 @@ import (
 // config holds the server's settings, seeded with defaults and overridden by
 // command-line flags. CONFIG GET reads from it.
 var config = map[string]string{
-	"dir":        "",
-	"dbfilename": "",
+	"dir":            "",
+	"dbfilename":     "",
+	"appendonly":     "no",
+	"appenddirname":  "appendonlydir",
+	"appendfilename": "appendonly.aof",
+	"appendfsync":    "everysec",
 }
 
 func main() {
 	dir := flag.String("dir", "", "directory holding the RDB file")
 	dbfilename := flag.String("dbfilename", "", "RDB file name")
+	appendonly := flag.String("appendonly", "no", "enable the append-only file")
+	appenddirname := flag.String("appenddirname", "appendonlydir", "AOF directory name")
+	appendfilename := flag.String("appendfilename", "appendonly.aof", "AOF base name")
+	appendfsync := flag.String("appendfsync", "everysec", "AOF fsync policy")
 	flag.Parse()
+	config["appendfsync"] = *appendfsync
+	config["appendonly"] = *appendonly
+	config["appenddirname"] = *appenddirname
+	config["appendfilename"] = *appendfilename
 	config["dir"] = *dir
+	if config["dir"] == "" {
+		// With no --dir, Redis reports the directory it was started in.
+		if wd, err := os.Getwd(); err == nil {
+			config["dir"] = wd
+		}
+	}
 	config["dbfilename"] = *dbfilename
 	loadRDB(filepath.Join(config["dir"], config["dbfilename"]))
+	if strings.EqualFold(config["appendonly"], "yes") {
+		setupAOF()
+	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
@@ -75,6 +96,16 @@ func handleConn(conn net.Conn) {
 		if len(args) == 0 {
 			continue
 		}
+		execute(conn, args)
+	}
+}
+
+// execute runs one command, writing its reply to w. Replay feeds the AOF
+// through this same function with the replies discarded, so a restored server
+// and a live one can never diverge through a second code path.
+func execute(w io.Writer, args []string) {
+	{
+		conn := w
 		switch strings.ToUpper(args[0]) {
 		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
@@ -84,6 +115,7 @@ func handleConn(conn net.Conn) {
 			}
 		case "SET":
 			if len(args) > 2 {
+				appendAOF(args)
 				e := entry{value: args[2]}
 				if ms, ok := pxOption(args); ok {
 					e.expireAt = time.Now().Add(time.Duration(ms) * time.Millisecond)
@@ -118,7 +150,7 @@ func handleConn(conn net.Conn) {
 				mu.Unlock()
 				if !ok {
 					conn.Write([]byte("$-1\r\n"))
-					continue
+					return
 				}
 				conn.Write(bulkString(e.value))
 			}
@@ -162,6 +194,125 @@ func readCommand(r *bufio.Reader) ([]string, error) {
 		args = append(args, string(buf[:size]))
 	}
 	return args, nil
+}
+
+// setupAOF prepares the append-only directory. Creating it is idempotent: a
+// server restarts against its own existing data far more often than it starts
+// fresh.
+// aofPath is the incremental AOF this server appends to.
+var (
+	aofPath string
+	aofMu   sync.Mutex
+)
+
+func setupAOF() {
+	dir := filepath.Join(config["dir"], config["appenddirname"])
+	os.MkdirAll(dir, 0o755)
+
+	// The manifest names the files that make up the AOF, so recovery follows
+	// it rather than a directory listing — and the incremental file it names
+	// need not share the configured base name.
+	manifest := filepath.Join(dir, config["appendfilename"]+".manifest")
+	if data, err := os.ReadFile(manifest); err == nil {
+		if incr := activeIncrFile(string(data)); incr != "" {
+			aofPath = filepath.Join(dir, incr)
+			replayAOF(aofPath)
+			return
+		}
+	}
+
+	// Fresh setup: create the first incremental file and the manifest naming
+	// it. Append mode, because truncating on open would destroy exactly the
+	// data the AOF exists to protect.
+	incr := config["appendfilename"] + ".1.incr.aof"
+	aofPath = filepath.Join(dir, incr)
+	f, err := os.OpenFile(aofPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	f.Close()
+	os.WriteFile(manifest, []byte(fmt.Sprintf("file %s seq 1 type i\n", incr)), 0o644)
+}
+
+// activeIncrFile returns the file named by the manifest's last "type i" entry.
+func activeIncrFile(manifest string) string {
+	var incr string
+	for _, line := range strings.Split(manifest, "\n") {
+		fields := strings.Fields(line)
+		var name, kind string
+		for i := 0; i+1 < len(fields); i += 2 {
+			switch fields[i] {
+			case "file":
+				name = fields[i+1]
+			case "type":
+				kind = fields[i+1]
+			}
+		}
+		if kind == "i" && name != "" {
+			incr = name
+		}
+	}
+	return incr
+}
+
+// replayAOF rebuilds the keyspace from the log at startup, before any client
+// connects. Replayed commands must not be logged again, so the append path is
+// disabled for the duration.
+func replayAOF(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	saved := aofPath
+	aofPath = "" // suppress logging while replaying
+	defer func() { aofPath = saved }()
+
+	r := bufio.NewReader(f)
+	for {
+		args, err := readCommand(r)
+		if err != nil {
+			return
+		}
+		if len(args) > 0 {
+			execute(io.Discard, args)
+		}
+	}
+}
+
+// appendAOF logs a command. The log format is RESP — the same encoding the
+// client sent — so replay is the parser read backwards, with no second format
+// to keep in sync.
+func appendAOF(args []string) {
+	if aofPath == "" || len(args) == 0 || !isWriteCommand(args[0]) {
+		return
+	}
+	aofMu.Lock()
+	defer aofMu.Unlock()
+	f, err := os.OpenFile(aofPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.Write(encodeCommand(args))
+}
+
+// writeCommands classifies the command set. Only commands that change state
+// belong in the log — logging reads inflates every restart and replays to the
+// same keyspace anyway.
+var writeCommands = map[string]bool{"SET": true}
+
+func isWriteCommand(name string) bool {
+	return writeCommands[strings.ToUpper(name)]
+}
+
+func encodeCommand(args []string) []byte {
+	parts := make([][]byte, len(args))
+	for i, a := range args {
+		parts[i] = bulkString(a)
+	}
+	return arrayOf(parts...)
 }
 
 // loadRDB reads the snapshot into the keyspace. The file is a stream of
