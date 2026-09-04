@@ -270,14 +270,12 @@ func replayAOF(path string) {
 	defer func() { aofPath = saved }()
 
 	r := bufio.NewReader(f)
-	for {
-		args, err := readCommand(r)
-		if err != nil {
-			return
-		}
-		if len(args) > 0 {
-			execute(io.Discard, args)
-		}
+	args, err := readCommand(r)
+	if err != nil {
+		return
+	}
+	if len(args) > 0 {
+		execute(io.Discard, args)
 	}
 }
 
