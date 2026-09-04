@@ -11,6 +11,8 @@ on:
       - 'reference-solutions/**'
       - 'web/gen/**'
       - 'engine/course/**'
+      - 'engine/learn/**'
+      - 'learn/**'
       - '.github/workflows/catalog.yml'
   pull_request:
     paths:
@@ -18,6 +20,8 @@ on:
       - 'reference-solutions/**'
       - 'web/gen/**'
       - 'engine/course/**'
+      - 'engine/learn/**'
+      - 'learn/**'
       - '.github/workflows/catalog.yml'
   workflow_dispatch:
 
