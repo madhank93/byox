@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -52,6 +53,7 @@ type stageEntry struct {
 	SourcePath  string // repo-relative path to the snapshotted main.go, if verified
 	PrevPath    string // repo-relative path to the nearest earlier stage's snapshot, if any
 	OriginStage int    // stage number where this snapshot's content was first introduced
+	GroupEnd    int    // last stage sharing this snapshot; > Index means the file covers a run of stages
 }
 
 type courseInfo struct {
@@ -103,13 +105,12 @@ func run() error {
 
 		verifiedByIndex := verifiedStages(filepath.Join(root, "reference-solutions", c.Slug))
 
-		// Track where each snapshot's content was first introduced. Some
-		// courses (notably redis) were snapshotted per feature-group, so a
-		// run of consecutive stages shares one cumulative file; originStage
-		// points every stage in a run at the stage that actually added the
-		// code, so an unchanged stage can say so meaningfully.
-		var lastContent string
-		originStage := 0
+		// Reference snapshots were captured per feature-group, so a run of
+		// consecutive stages can share one cumulative file. The spans say,
+		// for each stage, which stage actually introduced that code and how
+		// far the run reaches — enough for both surfaces to describe the
+		// snapshot's real scope instead of implying it is one stage's work.
+		originOf, groupEndOf := snapshotSpans(root, c.Slug, verifiedByIndex)
 
 		ci := courseInfo{
 			Slug:  c.Slug,
@@ -146,13 +147,8 @@ func run() error {
 						break
 					}
 				}
-				if src, err := os.ReadFile(filepath.Join(root, e.SourcePath)); err == nil {
-					if content := string(src); content != lastContent {
-						originStage = n
-						lastContent = content
-					}
-				}
-				e.OriginStage = originStage
+				e.OriginStage = originOf[n]
+				e.GroupEnd = groupEndOf[n]
 			}
 			// Every stage gets a detail file (full description); only
 			// verified ones get the reference-solution spoiler appended.
@@ -221,6 +217,48 @@ func verifiedStages(courseDir string) map[int]string {
 	return out
 }
 
+// snapshotSpans groups verified stages by snapshot content. Consecutive
+// stages that share a byte-identical cumulative file were captured as one
+// feature group, so the returned maps give, per stage, the stage that first
+// introduced that file and the last stage it covers.
+func snapshotSpans(root, course string, verified map[int]string) (origin, groupEnd map[int]int) {
+	origin, groupEnd = map[int]int{}, map[int]int{}
+
+	nums := make([]int, 0, len(verified))
+	for n := range verified {
+		nums = append(nums, n)
+	}
+	sort.Ints(nums)
+
+	var lastContent string
+	var run []int
+	closeRun := func() {
+		if len(run) == 0 {
+			return
+		}
+		first, last := run[0], run[len(run)-1]
+		for _, n := range run {
+			origin[n], groupEnd[n] = first, last
+		}
+		run = nil
+	}
+	for _, n := range nums {
+		src, err := os.ReadFile(filepath.Join(root, "reference-solutions", course, verified[n], "main.go"))
+		if err != nil {
+			closeRun()
+			lastContent = ""
+			continue
+		}
+		if content := string(src); content != lastContent {
+			closeRun()
+			lastContent = content
+		}
+		run = append(run, n)
+	}
+	closeRun()
+	return origin, groupEnd
+}
+
 var (
 	mdLink    = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
 	mdCode    = regexp.MustCompile("`([^`]+)`")
@@ -252,6 +290,17 @@ func firstParagraph(md string) string {
 	return ""
 }
 
+// scopeNote labels a solution block with the stages it actually covers.
+// A snapshot shared by a run of stages was captured once for that whole
+// feature group, so presenting it as this stage's work alone overstates it.
+func scopeNote(e stageEntry, single string) string {
+	if e.GroupEnd > e.Index {
+		return fmt.Sprintf("_Captured once for stages **%d-%d** as one feature group, so this code covers the whole group, not stage %d alone:_\n\n",
+			e.Index, e.GroupEnd, e.Index)
+	}
+	return single + "\n\n"
+}
+
 // writeDetail renders one stage's modal content: the full instructions,
 // then the tester-verified reference solution's source behind a
 // <details> spoiler so it never loads with the table.
@@ -281,7 +330,7 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 			if prev, err := os.ReadFile(filepath.Join(root, e.PrevPath)); err == nil {
 				delta, changed := diff.Unified(strings.TrimRight(string(prev), "\n"), cur)
 				if changed {
-					b.WriteString("_Changes this stage adds to the previous stage's solution:_\n\n")
+					b.WriteString(scopeNote(e, "_Changes this stage adds to the previous stage's solution:_"))
 					fmt.Fprintf(&b, "```diff title=%q\n%s\n```\n\n", "main.go", delta)
 				} else if e.OriginStage > 0 && e.OriginStage < e.Index {
 					fmt.Fprintf(&b, "_No new code for this stage — it's covered by the same cumulative solution introduced at **stage %d** (these reference snapshots were captured per feature-group, so a group's code appears at the stage that starts it). See stage %d for the diff._\n\n", e.OriginStage, e.OriginStage)
@@ -293,7 +342,7 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 				return os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644)
 			}
 		}
-		b.WriteString("_First stage's reference solution (baseline):_\n\n")
+		b.WriteString(scopeNote(e, "_First stage's reference solution (baseline):_"))
 		fmt.Fprintf(&b, "```go title=%q\n%s\n```\n\n", "main.go", cur)
 		b.WriteString("</details>\n")
 	}
