@@ -400,6 +400,15 @@ func readPartitionLog(topicName string, partition int32) []byte {
 	if err != nil {
 		return nil
 	}
+	// One record batch for now: base_offset is 8 bytes and batch_length the
+	// 4 after it, covering everything that follows. The next stage returns
+	// the whole log.
+	if len(data) >= 12 {
+		batchLength := int(binary.BigEndian.Uint32(data[8:12]))
+		if end := 12 + batchLength; end <= len(data) {
+			return data[:end]
+		}
+	}
 	return data
 }
 

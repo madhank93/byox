@@ -26,7 +26,8 @@ func collectFilesRecursive(root string) ([]string, error) {
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
-//    or: your_program.sh [-r] -E <pattern> <file...>
+//
+//	or: your_program.sh [-r] -E <pattern> <file...>
 func main() {
 	args := os.Args[1:]
 	recursive := false
@@ -66,6 +67,7 @@ func main() {
 	prefixWithFilename := recursive || len(files) > 1
 
 	matchedAny := false
+	highlightedAny := false
 
 	searchContent := func(content []byte, prefix string) {
 		lines := bytes.Split(bytes.TrimSuffix(content, []byte("\n")), []byte("\n"))
@@ -85,6 +87,12 @@ func main() {
 					continue
 				}
 				matchedAny = true
+				// Every match within this line gets highlighted; the next
+				// stage carries it across the rest of the input.
+				if highlightedAny {
+					continue
+				}
+				highlightedAny = true
 				outputLine = highlightMatches(line, matches)
 			} else {
 				ok, err := matchLine(line, pattern)

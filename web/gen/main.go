@@ -19,11 +19,13 @@ import (
 
 	"github.com/madhank93/byox/course"
 	"github.com/madhank93/byox/diff"
+	"github.com/madhank93/byox/learn"
 )
 
 const (
 	dataDir    = "web/src/data"
 	detailsDir = "web/src/data/stage-details"
+	primersDir = "web/src/content/docs/learn"
 )
 
 // courseColor gives every stage of a course the same chip color on
@@ -160,6 +162,9 @@ func run() error {
 		courses = append(courses, ci)
 	}
 
+	if err := writePrimers(root, courses); err != nil {
+		return err
+	}
 	return writeCatalog(root, courses, stages)
 }
 
@@ -319,6 +324,15 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 	b.WriteString(fullDescription)
 	b.WriteString("\n\n")
 
+	// byox's own concept note for the stage, where one is written. It sits
+	// between the instructions and the solution spoiler: the reader has the
+	// task and has not yet been shown the answer.
+	if note, ok := learn.Note(root, e.Course, e.Index, e.Slug); ok {
+		b.WriteString("---\n\n")
+		b.WriteString(note)
+		b.WriteString("\n\n---\n\n")
+	}
+
 	if src, err := os.ReadFile(filepath.Join(root, e.SourcePath)); err == nil {
 		cur := strings.TrimRight(string(src), "\n")
 		b.WriteString("<details>\n<summary>Show the reference solution (spoiler)</summary>\n\n")
@@ -349,6 +363,36 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 
 	name := e.Course + "-" + e.Slug + ".md"
 	return os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644)
+}
+
+// writePrimers turns each course's learn/<course>/index.md into a Starlight
+// page under /learn/. The primers are byox's own prose, so unlike the
+// vendored stage instructions they can be published as pages rather than
+// only shown behind a click.
+func writePrimers(root string, courses []courseInfo) error {
+	dir := filepath.Join(root, primersDir)
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, c := range courses {
+		body, ok := learn.Primer(root, c.Slug)
+		if !ok {
+			continue
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "---\ntitle: %s\ndescription: %s\n---\n\n",
+			js(c.Name+" — primer"),
+			js("The domain background behind "+c.Name+": what the protocol or format actually is, and the Go you reach for."))
+		b.WriteString(body)
+		b.WriteString("\n")
+		if err := os.WriteFile(filepath.Join(dir, c.Slug+".md"), []byte(b.String()), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeCatalog emits src/data/catalog.ts: the typed COURSES/CATALOG data
@@ -389,6 +433,21 @@ func writeCatalog(root string, courses []courseInfo, stages []stageEntry) error 
 		verified += c.Verified
 	}
 	fmt.Fprintf(os.Stderr, "gen: wrote %d courses, %d/%d stages verified -> %s\n", len(courses), verified, total, out)
+
+	// Teaching content is written by hand and lands course by course, so
+	// report coverage rather than assuming it.
+	primers, notes := 0, 0
+	for _, c := range courses {
+		if _, ok := learn.Primer(root, c.Slug); ok {
+			primers++
+		}
+	}
+	for _, e := range stages {
+		if _, ok := learn.Note(root, e.Course, e.Index, e.Slug); ok {
+			notes++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "gen: learn coverage: %d/%d primers, %d/%d stage notes\n", primers, len(courses), notes, total)
 	return nil
 }
 

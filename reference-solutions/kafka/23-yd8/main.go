@@ -310,8 +310,13 @@ func produceBody(r *byteReader) []byte {
 		topic, topicKnown := metadata[t.name]
 
 		body = appendCompactString(body, t.name)
-		body = appendUvarint(body, uint64(len(t.partitions)+1))
-		for _, p := range t.partitions {
+		// One partition for now; the next stage produces to all of them.
+		produceTo := t.partitions
+		if len(produceTo) > 1 {
+			produceTo = produceTo[:1]
+		}
+		body = appendUvarint(body, uint64(len(produceTo)+1))
+		for _, p := range produceTo {
 			var errorCode uint16 = unknownTopicOrPartition
 			var baseOffset, logStartOffset int64 = -1, -1
 			if topicKnown && partitionExists(topic, p.id) {

@@ -61,11 +61,38 @@ the cursor is in.
 | `t` | run tests for the cursor's course (or just save a file) |
 | `e` | open the solution's `main.go` in `$VISUAL`/`$EDITOR`; tests rerun on return |
 | `s` | show / hide the reference solution for the selected stage |
+| `n` | show / hide the learning notes for the stage (or the course primer on a header row) |
 | `/` | fuzzy-filter stages by name or slug, across all courses |
 | `c` | jump to the current stage of the cursor's course |
 | `J/K` / `pgup/pgdn` | scroll the instructions / log / solution pane |
 | `esc` | log or solution → instructions, or clear filter |
 | `q` | quit |
+
+### Learning notes
+
+CodeCrafters' stage instructions tell you *what to build*. `learn/` is byox's
+own layer telling you *what you're learning while you build it* — and it is the
+only stage content this repo owns, written from the specs rather than copied
+from anywhere.
+
+```
+learn/<course>/index.md      course primer — the protocol or file format itself,
+                             the Go packages that carry it, the traps
+learn/<course>/NN-slug.md    per-stage note — the concept, the APIs to reach for,
+                             a three-step hint ladder, primary sources
+```
+
+Press `n` in the TUI: a stage row shows that stage's note, a course header row
+shows the primer. Hints stay hidden until you press `f` — the terminal can't
+collapse them the way the website's `<details>` do, and a hint you didn't ask
+for isn't a hint. On the website the primers are pages under **Course primers**,
+and a stage's note appears in its catalog modal between the instructions and the
+reference-solution spoiler.
+
+Coverage is partial by design and grows one stage at a time — `just gen` prints
+it (`learn coverage: 10/10 primers, 14/390 stage notes`), and a stage with no
+note yet says so instead of erroring. `learn/README.md` has the format and the
+house rules for writing more.
 
 ### Reference solutions
 
@@ -126,6 +153,7 @@ Stage rows: `✓` done · `▶` current · `○` locked, with stage number, slug
 
 ```
 courses.yml        course registry (add new courses here)
+learn/<course>/     byox's own primers and per-stage concept notes
 engine/            Go module: byox CLI + TUI
 solutions/<c>/     your code (seeded once from official Go starter, never overwritten)
 vendor/            cloned course repos      (gitignored)

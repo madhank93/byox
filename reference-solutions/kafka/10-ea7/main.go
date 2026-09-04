@@ -121,8 +121,13 @@ func describeTopicPartitionsBody(r *byteReader) []byte {
 			body = append(body, topic.id[:]...) // topic_id
 			body = append(body, 0)              // is_internal: false
 
-			body = appendUvarint(body, uint64(len(topic.partitions)+1))
-			for _, p := range topic.partitions {
+			// One partition for now; the next stage lists them all.
+			partitions := topic.partitions
+			if len(partitions) > 1 {
+				partitions = partitions[:1]
+			}
+			body = appendUvarint(body, uint64(len(partitions)+1))
+			for _, p := range partitions {
 				body = binary.BigEndian.AppendUint16(body, 0) // error_code
 				body = binary.BigEndian.AppendUint32(body, uint32(p.id))
 				body = binary.BigEndian.AppendUint32(body, uint32(p.leader))

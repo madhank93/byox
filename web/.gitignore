@@ -19,3 +19,6 @@ npm-debug.log*
 
 # macOS-specific files
 .DS_Store
+
+# generated course primers (copied from learn/ by web/gen)
+src/content/docs/learn/
