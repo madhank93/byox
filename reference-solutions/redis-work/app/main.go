@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -281,6 +283,105 @@ func parseStreamID(id string) (uint64, uint64, bool) {
 
 var streams = map[string][]streamEntry{}
 
+// user is a Redis ACL user. Passwords are stored only as hashes, so reading
+// the configuration never reveals a usable secret.
+type user struct {
+	nopass    bool
+	passwords []string // SHA-256 hex digests
+}
+
+var defaultUser = &user{nopass: true}
+
+// check compares a supplied password against the stored hashes. The plaintext
+// is never stored, so it is never compared.
+func (u *user) check(password string) bool {
+	if u.nopass {
+		return true
+	}
+	sum := sha256.Sum256([]byte(password))
+	supplied := hex.EncodeToString(sum[:])
+	for _, stored := range u.passwords {
+		if subtle.ConstantTimeCompare([]byte(stored), []byte(supplied)) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// Geo encoding bounds. Latitude is clipped where the Mercator projection
+// stops being finite, which is why it is not ±90.
+const (
+	geoLatMin = -85.05112878
+	geoLatMax = 85.05112878
+	geoLonMin = -180.0
+	geoLonMax = 180.0
+	geoStep   = 26
+)
+
+// geoEncode turns a coordinate pair into one sortable 52-bit integer by
+// quantising each axis to 26 bits and interleaving them — latitude in the even
+// positions, longitude in the odd. Interleaving is what makes proximity work:
+// sharing a prefix of the result means sharing a quadrant at every level of
+// subdivision, so "near on the map" becomes "near in score".
+func geoEncode(lon, lat float64) uint64 {
+	latOffset := uint64((lat - geoLatMin) / (geoLatMax - geoLatMin) * (1 << geoStep))
+	lonOffset := uint64((lon - geoLonMin) / (geoLonMax - geoLonMin) * (1 << geoStep))
+	return spreadBits(latOffset) | spreadBits(lonOffset)<<1
+}
+
+// spreadBits moves each of the low 32 bits into an even position, leaving the
+// odd positions free for the other axis.
+func spreadBits(v uint64) uint64 {
+	v &= 0xFFFFFFFF
+	v = (v | (v << 16)) & 0x0000FFFF0000FFFF
+	v = (v | (v << 8)) & 0x00FF00FF00FF00FF
+	v = (v | (v << 4)) & 0x0F0F0F0F0F0F0F0F
+	v = (v | (v << 2)) & 0x3333333333333333
+	v = (v | (v << 1)) & 0x5555555555555555
+	return v
+}
+
+// earthRadius is the value Redis uses, in metres.
+const earthRadius = 6372797.560856
+
+// haversine returns the great-circle distance between two points: the
+// distance over the surface of a sphere, not a straight line through it.
+func haversine(lon1, lat1, lon2, lat2 float64) float64 {
+	rad := func(deg float64) float64 { return deg * math.Pi / 180 }
+	dLat := rad(lat2 - lat1)
+	dLon := rad(lon2 - lon1)
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(rad(lat1))*math.Cos(rad(lat2))*math.Sin(dLon/2)*math.Sin(dLon/2)
+	return 2 * earthRadius * math.Asin(math.Sqrt(a))
+}
+
+// geoDecode is geoEncode's inverse, and it is lossy: 26 bits per axis
+// quantises the world into cells, so what comes back is the centre of the cell
+// the original point fell into, never the point itself.
+func geoDecode(score uint64) (lon, lat float64) {
+	latBits := squashBits(score)
+	lonBits := squashBits(score >> 1)
+
+	latScale := (geoLatMax - geoLatMin) / (1 << geoStep)
+	lonScale := (geoLonMax - geoLonMin) / (1 << geoStep)
+
+	latLow := geoLatMin + float64(latBits)*latScale
+	lonLow := geoLonMin + float64(lonBits)*lonScale
+	return lonLow + lonScale/2, latLow + latScale/2
+}
+
+// squashBits is spreadBits reversed: it collects the even-position bits back
+// into a contiguous value.
+func squashBits(v uint64) uint64 {
+	v &= 0x5555555555555555
+	v = (v | (v >> 1)) & 0x3333333333333333
+	v = (v | (v >> 2)) & 0x0F0F0F0F0F0F0F0F
+	v = (v | (v >> 4)) & 0x00FF00FF00FF00FF
+	v = (v | (v >> 8)) & 0x0000FFFF0000FFFF
+	v = (v | (v >> 16)) & 0x00000000FFFFFFFF
+	return v
+}
+
 // sortedMembers returns a set's members in rank order: by score, and for
 // equal scores lexicographically by member, so ranks are total and stable.
 func sortedMembers(set map[string]float64) []string {
@@ -316,6 +417,10 @@ type client struct {
 	// watched maps a key to the version this connection saw when it was
 	// watched, so EXEC can tell whether anyone has since changed it.
 	watched map[string]uint64
+
+	// authenticated is per connection: one client's login must not open the
+	// door for another.
+	authenticated bool
 
 	// channels is this connection's subscription set.
 	channels map[string]bool
@@ -385,7 +490,10 @@ func (c *client) resetTransaction() {
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
-	c := &client{w: conn}
+	// A connection opened while the default user has nopass is already
+	// authenticated; setting a password later does not retroactively lock it
+	// out, it applies to connections opened afterwards.
+	c := &client{w: conn, authenticated: defaultUser.nopass}
 	r := bufio.NewReader(conn)
 	for {
 		args, err := readCommand(r)
@@ -414,6 +522,14 @@ var subscribedAllowed = map[string]bool{
 
 func dispatch(c *client, args []string) {
 	name := strings.ToUpper(args[0])
+
+	// One gate, before the command switch, so a command added later is
+	// protected by default rather than by remembering. AUTH itself must stay
+	// reachable, or nobody could ever authenticate.
+	if !c.authenticated && name != "AUTH" {
+		c.w.Write([]byte("-NOAUTH Authentication required.\r\n"))
+		return
+	}
 	if len(c.channels) > 0 && !subscribedAllowed[name] {
 		fmt.Fprintf(c.w, "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
 			strings.ToLower(args[0]))
@@ -482,6 +598,24 @@ func dispatch(c *client, args []string) {
 			// fire-and-forget, and 0 means the message is simply gone.
 			fmt.Fprintf(c.w, ":%d\r\n", n)
 		}
+	case "AUTH":
+		password := ""
+		switch len(args) {
+		case 2:
+			password = args[1]
+		case 3:
+			password = args[2] // AUTH <user> <password>
+		default:
+			c.w.Write([]byte("-ERR wrong number of arguments for 'auth' command\r\n"))
+			return
+		}
+		if !defaultUser.check(password) {
+			// The error code, not the message, is what clients branch on.
+			c.w.Write([]byte("-WRONGPASS invalid username-password pair or user is disabled.\r\n"))
+			return
+		}
+		c.authenticated = true
+		c.w.Write([]byte("+OK\r\n"))
 	case "SUBSCRIBE":
 		for _, channel := range args[1:] {
 			c.subscribe(channel)
@@ -791,6 +925,149 @@ func execute(w io.Writer, args []string) {
 				for _, v := range list[start : stop+1] {
 					parts = append(parts, bulkString(v))
 				}
+				conn.Write(arrayOf(parts...))
+			}
+		case "GEOADD":
+			if len(args) > 4 {
+				// Longitude first, then latitude.
+				lon, err1 := strconv.ParseFloat(args[2], 64)
+				lat, err2 := strconv.ParseFloat(args[3], 64)
+				// Latitude stops at ±85.05112878, not ±90: beyond that the
+				// Mercator projection has no finite y, so the poles are
+				// outside what the encoding can represent.
+				if err1 != nil || err2 != nil ||
+					lon < -180 || lon > 180 || lat < -85.05112878 || lat > 85.05112878 {
+					fmt.Fprintf(conn, "-ERR invalid longitude,latitude pair %s,%s\r\n", args[2], args[3])
+					return
+				}
+				// There is no geo type: a location is a sorted-set member, so
+				// every sorted-set command already works on geo data.
+				member := args[4]
+				mu.Lock()
+				set := zsets[args[1]]
+				if set == nil {
+					set = map[string]float64{}
+					zsets[args[1]] = set
+				}
+				_, existed := set[member]
+				set[member] = float64(geoEncode(lon, lat))
+				bumpVersion(args[1])
+				mu.Unlock()
+				if existed {
+					conn.Write([]byte(":0\r\n"))
+					return
+				}
+				conn.Write([]byte(":1\r\n"))
+			}
+		case "ACL":
+			if len(args) > 3 && strings.EqualFold(args[1], "SETUSER") && args[2] == "default" {
+				for _, rule := range args[3:] {
+					if !strings.HasPrefix(rule, ">") {
+						continue
+					}
+					// Only the hash is kept, and nopass goes: they are two
+					// states of one user, not independent settings.
+					sum := sha256.Sum256([]byte(rule[1:]))
+					defaultUser.nopass = false
+					defaultUser.passwords = append(defaultUser.passwords, hex.EncodeToString(sum[:]))
+				}
+				conn.Write([]byte("+OK\r\n"))
+				return
+			}
+			if len(args) > 2 && strings.EqualFold(args[1], "GETUSER") {
+				if args[2] != "default" {
+					conn.Write([]byte("*-1\r\n"))
+					return
+				}
+				// A flat array of property, value pairs — the same
+				// no-map-type workaround CONFIG GET uses.
+				// nopass means any password is accepted — how a fresh Redis
+				// is open to anyone who can reach the port. It is a flag you
+				// can inspect, not an absence of configuration.
+				flags := arrayOf()
+				if defaultUser.nopass {
+					flags = arrayOf(bulkString("nopass"))
+				}
+				// Credentials are reported as SHA-256 hashes, so reading the
+				// ACL never reveals a usable secret.
+				pw := make([][]byte, 0, len(defaultUser.passwords))
+				for _, h := range defaultUser.passwords {
+					pw = append(pw, bulkString(h))
+				}
+				conn.Write(arrayOf(
+					bulkString("flags"), flags,
+					bulkString("passwords"), arrayOf(pw...),
+				))
+				return
+			}
+			if len(args) > 1 && strings.EqualFold(args[1], "WHOAMI") {
+				// Every connection is authenticated as someone; before any
+				// login that someone is the built-in "default" user, so
+				// there is no unauthenticated state to special-case.
+				conn.Write(bulkString("default"))
+			}
+		case "GEOSEARCH":
+			if len(args) > 7 {
+				lon, err1 := strconv.ParseFloat(args[3], 64)
+				lat, err2 := strconv.ParseFloat(args[4], 64)
+				radius, err3 := strconv.ParseFloat(args[6], 64)
+				if err1 != nil || err2 != nil || err3 != nil {
+					conn.Write([]byte("-ERR syntax error\r\n"))
+					return
+				}
+				mu.Lock()
+				members := sortedMembers(zsets[args[1]])
+				set := zsets[args[1]]
+				var parts [][]byte
+				for _, member := range members {
+					mLon, mLat := geoDecode(uint64(set[member]))
+					// Decoding every member and measuring is the honest
+					// version. Real Redis first narrows to the geohash cells
+					// the radius touches — which is what the interleaved
+					// encoding was for.
+					if haversine(lon, lat, mLon, mLat) <= radius {
+						parts = append(parts, bulkString(member))
+					}
+				}
+				mu.Unlock()
+				conn.Write(arrayOf(parts...))
+			}
+		case "GEODIST":
+			if len(args) > 3 {
+				mu.Lock()
+				set := zsets[args[1]]
+				from, ok1 := set[args[2]]
+				to, ok2 := set[args[3]]
+				mu.Unlock()
+				if !ok1 || !ok2 {
+					conn.Write([]byte("$-1\r\n"))
+					return
+				}
+				lon1, lat1 := geoDecode(uint64(from))
+				lon2, lat2 := geoDecode(uint64(to))
+				conn.Write(bulkString(strconv.FormatFloat(haversine(lon1, lat1, lon2, lat2), 'f', 4, 64)))
+			}
+		case "GEOPOS":
+			if len(args) > 1 {
+				mu.Lock()
+				set := zsets[args[1]]
+				// One element per member asked for: a missing one is a null
+				// array rather than a gap, so the reply stays aligned with
+				// the request.
+				parts := make([][]byte, 0, len(args)-2)
+				for _, member := range args[2:] {
+					score, ok := set[member]
+					if !ok {
+						parts = append(parts, []byte("*-1\r\n"))
+						continue
+					}
+					lon, lat := geoDecode(uint64(score))
+					parts = append(parts, arrayOf(
+						bulkString(strconv.FormatFloat(lon, 'f', 17, 64)),
+						bulkString(strconv.FormatFloat(lat, 'f', 17, 64)),
+					))
+				}
+				mu.Unlock()
 				conn.Write(arrayOf(parts...))
 			}
 		case "ZADD":
