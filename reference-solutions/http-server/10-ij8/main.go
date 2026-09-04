@@ -2,10 +2,9 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"compress/gzip"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,43 +32,60 @@ func main() {
 	}
 }
 
-type request struct {
-	method  string
-	path    string
-	headers map[string]string
-	body    []byte
-}
-
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
-	for {
-		req, err := readRequest(r)
-		if err != nil {
-			return
+	line, _ := r.ReadString('\n')
+	parts := strings.Fields(line)
+	method, path := "GET", "/"
+	if len(parts) >= 2 {
+		method, path = parts[0], parts[1]
+	}
+	headers := readHeaders(r)
+
+	var body []byte
+	if cl := headers["content-length"]; cl != "" {
+		n, _ := strconv.Atoi(cl)
+		body = make([]byte, n)
+		io.ReadFull(r, body)
+	}
+
+	switch {
+	case path == "/":
+		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+	case strings.HasPrefix(path, "/echo/"):
+		writeText(conn, strings.TrimPrefix(path, "/echo/"), headers["accept-encoding"])
+	case path == "/user-agent":
+		writeText(conn, headers["user-agent"], "")
+	case strings.HasPrefix(path, "/files/"):
+		name := strings.TrimPrefix(path, "/files/")
+		if method == "POST" {
+			os.WriteFile(filepath.Join(fileDir, name), body, 0o644)
+			conn.Write([]byte("HTTP/1.1 201 Created\r\n\r\n"))
+		} else {
+			serveFile(conn, name)
 		}
-		keepAlive := !strings.EqualFold(req.headers["connection"], "close")
-		respond(conn, req, keepAlive)
-		if !keepAlive {
-			return
-		}
+	default:
+		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
 }
 
-func readRequest(r *bufio.Reader) (*request, error) {
-	line, err := r.ReadString('\n')
+func serveFile(conn net.Conn, name string) {
+	data, err := os.ReadFile(filepath.Join(fileDir, name))
 	if err != nil {
-		return nil, err
+		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		return
 	}
-	parts := strings.Fields(strings.TrimSpace(line))
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("bad request line")
-	}
-	req := &request{method: parts[0], path: parts[1], headers: map[string]string{}}
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n", len(data))
+	conn.Write(data)
+}
+
+func readHeaders(r *bufio.Reader) map[string]string {
+	headers := map[string]string{}
 	for {
 		h, err := r.ReadString('\n')
 		if err != nil {
-			return nil, err
+			break
 		}
 		h = strings.TrimRight(h, "\r\n")
 		if h == "" {
@@ -77,101 +93,33 @@ func readRequest(r *bufio.Reader) (*request, error) {
 		}
 		k, v, ok := strings.Cut(h, ":")
 		if ok {
-			req.headers[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
+			headers[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
 		}
 	}
-	if cl := req.headers["content-length"]; cl != "" {
-		n, _ := strconv.Atoi(cl)
-		req.body = make([]byte, n)
-		if _, err := readFull(r, req.body); err != nil {
-			return nil, err
-		}
-	}
-	return req, nil
+	return headers
 }
 
-func readFull(r *bufio.Reader, buf []byte) (int, error) {
-	total := 0
-	for total < len(buf) {
-		n, err := r.Read(buf[total:])
-		total += n
-		if err != nil {
-			return total, err
-		}
-	}
-	return total, nil
-}
-
-func respond(conn net.Conn, req *request, keepAlive bool) {
-	switch {
-	case req.path == "/":
-		writeResponse(conn, req, 200, "", nil, keepAlive)
-
-	case strings.HasPrefix(req.path, "/echo/"):
-		writeResponse(conn, req, 200, "text/plain", []byte(strings.TrimPrefix(req.path, "/echo/")), keepAlive)
-
-	case req.path == "/user-agent":
-		writeResponse(conn, req, 200, "text/plain", []byte(req.headers["user-agent"]), keepAlive)
-
-	case strings.HasPrefix(req.path, "/files/"):
-		name := strings.TrimPrefix(req.path, "/files/")
-		full := filepath.Join(fileDir, name)
-		if req.method == "POST" {
-			if err := os.WriteFile(full, req.body, 0o644); err != nil {
-				writeResponse(conn, req, 500, "", nil, keepAlive)
-			} else {
-				writeResponse(conn, req, 201, "", nil, keepAlive)
-			}
-		} else {
-			data, err := os.ReadFile(full)
-			if err != nil {
-				writeResponse(conn, req, 404, "", nil, keepAlive)
-			} else {
-				writeResponse(conn, req, 200, "application/octet-stream", data, keepAlive)
-			}
-		}
-
-	default:
-		writeResponse(conn, req, 404, "", nil, keepAlive)
-	}
-}
-
-var statusText = map[int]string{200: "OK", 201: "Created", 404: "Not Found", 500: "Internal Server Error"}
-
-func writeResponse(conn net.Conn, req *request, status int, contentType string, body []byte, keepAlive bool) {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "HTTP/1.1 %d %s\r\n", status, statusText[status])
-
-	if body != nil && wantsGzip(req.headers["accept-encoding"]) {
-		var gz bytes.Buffer
-		w := gzip.NewWriter(&gz)
-		w.Write(body)
-		w.Close()
-		body = gz.Bytes()
-		b.WriteString("Content-Encoding: gzip\r\n")
-	}
-	if contentType != "" {
-		fmt.Fprintf(&b, "Content-Type: %s\r\n", contentType)
-	}
-	if body != nil {
-		fmt.Fprintf(&b, "Content-Length: %d\r\n", len(body))
-	}
-	if !keepAlive {
-		b.WriteString("Connection: close\r\n")
-	}
-	b.WriteString("\r\n")
-	if body != nil {
-		b.Write(body)
-	}
-	conn.Write(b.Bytes())
-}
-
-// wantsGzip reports whether the Accept-Encoding list includes gzip.
-func wantsGzip(accept string) bool {
+// acceptsGzip reports whether gzip appears in an Accept-Encoding list. Most
+// HTTP headers are lists, and substring matching on the raw value would accept
+// "x-gzip-2".
+func acceptsGzip(accept string) bool {
 	for _, enc := range strings.Split(accept, ",") {
+		enc, _, _ = strings.Cut(enc, ";") // drop any q-weight
 		if strings.EqualFold(strings.TrimSpace(enc), "gzip") {
 			return true
 		}
 	}
 	return false
+}
+
+// writeText writes a 200 response with a plain-text body, naming the encoding
+// only when the client offered it. A server must never apply an encoding the
+// client did not ask for, so an unrecognised value means no header at all.
+func writeText(conn net.Conn, body, acceptEncoding string) {
+	encoding := ""
+	if acceptsGzip(acceptEncoding) {
+		encoding = "Content-Encoding: gzip\r\n"
+	}
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n%sContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s",
+		encoding, len(body), body)
 }

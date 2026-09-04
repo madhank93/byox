@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"flag"
 	"fmt"
 	"io"
@@ -34,14 +36,33 @@ func main() {
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
+	// HTTP/1.1 keeps the connection open by default, so serving is a loop.
+	// The reader is created once, outside it: a second reader would discard
+	// whatever the first had buffered, which is the next request.
 	r := bufio.NewReader(conn)
-	line, _ := r.ReadString('\n')
+	for {
+		if !serveRequest(conn, r) {
+			return
+		}
+	}
+}
+
+// serveRequest handles one request, reporting whether the connection should
+// stay open for another.
+func serveRequest(conn net.Conn, r *bufio.Reader) bool {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return false
+	}
 	parts := strings.Fields(line)
 	method, path := "GET", "/"
 	if len(parts) >= 2 {
 		method, path = parts[0], parts[1]
 	}
 	headers := readHeaders(r)
+	// The request carrying Connection: close still gets a full response; it
+	// is the connection that ends, not the exchange.
+	keepAlive := !strings.EqualFold(headers["connection"], "close")
 
 	var body []byte
 	if cl := headers["content-length"]; cl != "" {
@@ -52,31 +73,46 @@ func handleConn(conn net.Conn) {
 
 	switch {
 	case path == "/":
-		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+		writeStatus(conn, "200 OK", keepAlive)
 	case strings.HasPrefix(path, "/echo/"):
-		writeText(conn, strings.TrimPrefix(path, "/echo/"), headers["accept-encoding"])
+		writeText(conn, strings.TrimPrefix(path, "/echo/"), headers["accept-encoding"], keepAlive)
 	case path == "/user-agent":
-		writeText(conn, headers["user-agent"], "")
+		writeText(conn, headers["user-agent"], "", keepAlive)
 	case strings.HasPrefix(path, "/files/"):
 		name := strings.TrimPrefix(path, "/files/")
 		if method == "POST" {
 			os.WriteFile(filepath.Join(fileDir, name), body, 0o644)
-			conn.Write([]byte("HTTP/1.1 201 Created\r\n\r\n"))
+			writeStatus(conn, "201 Created", keepAlive)
 		} else {
-			serveFile(conn, name)
+			serveFile(conn, name, keepAlive)
 		}
 	default:
-		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		writeStatus(conn, "404 Not Found", keepAlive)
 	}
+	return keepAlive
 }
 
-func serveFile(conn net.Conn, name string) {
+// writeStatus writes a bodiless response, echoing Connection: close when the
+// client asked to end the connection.
+func writeStatus(conn net.Conn, status string, keepAlive bool) {
+	closing := ""
+	if !keepAlive {
+		closing = "Connection: close\r\n"
+	}
+	fmt.Fprintf(conn, "HTTP/1.1 %s\r\n%s\r\n", status, closing)
+}
+
+func serveFile(conn net.Conn, name string, keepAlive bool) {
 	data, err := os.ReadFile(filepath.Join(fileDir, name))
 	if err != nil {
-		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		writeStatus(conn, "404 Not Found", keepAlive)
 		return
 	}
-	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n", len(data))
+	closing := ""
+	if !keepAlive {
+		closing = "Connection: close\r\n"
+	}
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n%sContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n", closing, len(data))
 	conn.Write(data)
 }
 
@@ -99,7 +135,41 @@ func readHeaders(r *bufio.Reader) map[string]string {
 	return headers
 }
 
-// writeText writes a 200 response with a plain-text body.
-func writeText(conn net.Conn, body string) {
-	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+// acceptsGzip reports whether gzip appears in an Accept-Encoding list. Most
+// HTTP headers are lists, and substring matching on the raw value would accept
+// "x-gzip-2".
+func acceptsGzip(accept string) bool {
+	for _, enc := range strings.Split(accept, ",") {
+		enc, _, _ = strings.Cut(enc, ";") // drop any q-weight
+		if strings.EqualFold(strings.TrimSpace(enc), "gzip") {
+			return true
+		}
+	}
+	return false
+}
+
+// writeText writes a 200 response with a plain-text body, naming the encoding
+// only when the client offered it. A server must never apply an encoding the
+// client did not ask for, so an unrecognised value means no header at all.
+func writeText(conn net.Conn, body, acceptEncoding string, keepAlive bool) {
+	payload := []byte(body)
+	encoding := ""
+	if acceptsGzip(acceptEncoding) {
+		var gz bytes.Buffer
+		w := gzip.NewWriter(&gz)
+		w.Write(payload)
+		// Close writes the gzip trailer, so the length is only correct
+		// afterwards — a deferred Close would run too late to measure.
+		w.Close()
+		payload = gz.Bytes()
+		encoding = "Content-Encoding: gzip\r\n"
+	}
+	// Content-Length describes the bytes actually sent, compressed or not.
+	closing := ""
+	if !keepAlive {
+		closing = "Connection: close\r\n"
+	}
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n%s%sContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n",
+		encoding, closing, len(payload))
+	conn.Write(payload)
 }
