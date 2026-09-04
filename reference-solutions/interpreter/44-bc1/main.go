@@ -638,6 +638,11 @@ func NewEnvironment() *Environment {
 }
 
 func (env *Environment) Define(name string, value interface{}) {
+	// First declaration wins for now; the next stage lets a later `var` for
+	// the same name replace it, which is what Lox actually does.
+	if _, exists := env.values[name]; exists {
+		return
+	}
 	env.values[name] = value
 }
 

@@ -734,10 +734,10 @@ var locals = map[interface{}]int{}
 // actually called, which is wrong if the same name gets redeclared in
 // between (see the "shouldn't affect the usage in f above" test case).
 type Resolver struct {
-	scopes          []map[string]bool // scope stack; value is whether the name is fully defined yet
-	inFunctionDepth     int    // >0 while resolving a function body, for "return outside function" detection
-	inClassDepth        int    // >0 while resolving a class's methods, for "this outside a class" detection
-	currentFunctionKind string // kind of the innermost function being resolved: "function", "method", or "initializer"
+	scopes              []map[string]bool // scope stack; value is whether the name is fully defined yet
+	inFunctionDepth     int               // >0 while resolving a function body, for "return outside function" detection
+	inClassDepth        int               // >0 while resolving a class's methods, for "this outside a class" detection
+	currentFunctionKind string            // kind of the innermost function being resolved: "function", "method", or "initializer"
 }
 
 func NewResolver() *Resolver {
@@ -1356,9 +1356,8 @@ func (c *LoxClass) FindMethod(name string) (FunctionStmt, *LoxClass, bool) {
 	if method, ok := c.Methods[name]; ok {
 		return method, c, true
 	}
-	if c.Superclass != nil {
-		return c.Superclass.FindMethod(name)
-	}
+	// Only the class's own methods for now; the next stage walks up the
+	// superclass chain so a subclass inherits them.
 	return FunctionStmt{}, nil, false
 }
 

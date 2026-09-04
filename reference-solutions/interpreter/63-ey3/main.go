@@ -787,9 +787,11 @@ func evaluate(e Expr, env *Environment) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Calling something that is not callable is caught next stage; here
+		// the call simply evaluates to nil.
 		callable, ok := callee.(LoxCallable)
 		if !ok {
-			return nil, &RuntimeError{"Can only call functions and classes.", expr.Line}
+			return nil, nil
 		}
 		args := make([]interface{}, len(expr.Arguments))
 		for i, argExpr := range expr.Arguments {

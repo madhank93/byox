@@ -82,10 +82,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, perr)
 			os.Exit(65)
 		}
-		if rerr := NewResolver().resolveStmts(stmts); rerr != nil {
-			fmt.Fprintln(os.Stderr, rerr)
-			os.Exit(65)
-		}
 		env := NewEnvironment()
 		for _, stmt := range stmts {
 			if everr := execute(stmt, env); everr != nil {
@@ -331,12 +327,6 @@ func stringifyValue(v interface{}) string {
 		return val
 	case *LoxFunction:
 		return fmt.Sprintf("<fn %s>", val.Declaration.Name)
-	case *NativeFunction:
-		return "<native fn>"
-	case *LoxClass:
-		return val.Name
-	case *LoxInstance:
-		return val.Class.Name + " instance"
 	default:
 		return fmt.Sprintf("%v", val)
 	}
@@ -423,39 +413,6 @@ func (e CallExpr) String() string {
 	return fmt.Sprintf("(call %s %s)", e.Callee.String(), strings.Join(args, " "))
 }
 
-// GetExpr is a property read, e.g. "object.name".
-type GetExpr struct {
-	Object Expr
-	Name   string
-	Line   int
-}
-
-func (e *GetExpr) String() string {
-	return fmt.Sprintf("(get %s %s)", e.Object.String(), e.Name)
-}
-
-// SetExpr is a property write, e.g. "object.name = value".
-type SetExpr struct {
-	Object Expr
-	Name   string
-	Value  Expr
-	Line   int
-}
-
-func (e *SetExpr) String() string {
-	return fmt.Sprintf("(set %s %s %s)", e.Object.String(), e.Name, e.Value.String())
-}
-
-// SuperExpr is "super.method", a superclass method reference.
-type SuperExpr struct {
-	Method string
-	Line   int
-}
-
-func (e *SuperExpr) String() string {
-	return fmt.Sprintf("(super %s)", e.Method)
-}
-
 // Parser turns a token list into an Expr tree via recursive descent.
 type Parser struct {
 	tokens []Token
@@ -487,11 +444,8 @@ func (p *Parser) assignment() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if target, ok := expr.(*VariableExpr); ok && target.Name != "this" {
-			return &AssignExpr{target.Name, value, eqTok.Line}, nil
-		}
-		if target, ok := expr.(*GetExpr); ok {
-			return &SetExpr{Object: target.Object, Name: target.Name, Value: value, Line: eqTok.Line}, nil
+		if target, ok := expr.(VariableExpr); ok {
+			return AssignExpr{target.Name, value, eqTok.Line}, nil
 		}
 		return nil, fmt.Errorf("[line %d] Error at '=': Invalid assignment target.", eqTok.Line)
 	}
@@ -612,40 +566,27 @@ func (p *Parser) call() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	for {
-		if p.tokens[p.pos].Type == "LEFT_PAREN" {
-			parenTok := p.tokens[p.pos]
-			p.pos++
-			var args []Expr
-			if p.tokens[p.pos].Type != "RIGHT_PAREN" {
-				for {
-					arg, err := p.parseExpression()
-					if err != nil {
-						return nil, err
-					}
-					args = append(args, arg)
-					if p.tokens[p.pos].Type != "COMMA" {
-						break
-					}
-					p.pos++
+	for p.tokens[p.pos].Type == "LEFT_PAREN" {
+		parenTok := p.tokens[p.pos]
+		p.pos++
+		var args []Expr
+		if p.tokens[p.pos].Type != "RIGHT_PAREN" {
+			for {
+				arg, err := p.parseExpression()
+				if err != nil {
+					return nil, err
 				}
+				args = append(args, arg)
+				if p.tokens[p.pos].Type != "COMMA" {
+					break
+				}
+				p.pos++
 			}
-			if err := p.expectToken("RIGHT_PAREN", "')' after arguments"); err != nil {
-				return nil, err
-			}
-			expr = CallExpr{expr, args, parenTok.Line}
-		} else if p.tokens[p.pos].Type == "DOT" {
-			p.pos++
-			if p.tokens[p.pos].Type != "IDENTIFIER" {
-				tok := p.tokens[p.pos]
-				return nil, fmt.Errorf("[line %d] Error at %s: Expect property name after '.'.", tok.Line, describeToken(tok))
-			}
-			nameTok := p.tokens[p.pos]
-			p.pos++
-			expr = &GetExpr{Object: expr, Name: nameTok.Lexeme, Line: nameTok.Line}
-		} else {
-			break
 		}
+		if err := p.expectToken("RIGHT_PAREN", "')' after arguments"); err != nil {
+			return nil, err
+		}
+		expr = CallExpr{expr, args, parenTok.Line}
 	}
 	return expr, nil
 }
@@ -683,22 +624,7 @@ func (p *Parser) primary() (Expr, error) {
 		return GroupingExpr{inner}, nil
 	case "IDENTIFIER":
 		p.pos++
-		return &VariableExpr{tok.Lexeme, tok.Line}, nil
-	case "THIS":
-		p.pos++
-		return &VariableExpr{tok.Lexeme, tok.Line}, nil
-	case "SUPER":
-		p.pos++
-		if err := p.expectToken("DOT", "'.' after 'super'"); err != nil {
-			return nil, err
-		}
-		if p.tokens[p.pos].Type != "IDENTIFIER" {
-			methodTok := p.tokens[p.pos]
-			return nil, fmt.Errorf("[line %d] Error at %s: Expect superclass method name.", methodTok.Line, describeToken(methodTok))
-		}
-		methodTok := p.tokens[p.pos]
-		p.pos++
-		return &SuperExpr{Method: methodTok.Lexeme, Line: tok.Line}, nil
+		return VariableExpr{tok.Lexeme, tok.Line}, nil
 	}
 	return nil, fmt.Errorf("[line %d] Error at %s: Expect expression.", tok.Line, describeToken(tok))
 }
@@ -741,264 +667,6 @@ type RuntimeError struct {
 
 func (e *RuntimeError) Error() string {
 	return fmt.Sprintf("%s\n[line %d]", e.Message, e.Line)
-}
-
-// locals maps a *VariableExpr or *AssignExpr node (by pointer identity —
-// each occurrence in the source is a distinct allocation, even if two
-// occurrences share the same name and line) to how many Environment
-// parent-hops away its declaring scope is, as computed by a Resolver
-// pass before execution. A node absent from this map is assumed global,
-// looked up dynamically via Environment.Get instead.
-var locals = map[interface{}]int{}
-
-// Resolver performs a static pass over the AST before execution, so a
-// closure binds to the specific variable that existed in its enclosing
-// scope at declaration time — a plain dynamic environment lookup by name
-// would instead see whatever's in that scope by the time the closure is
-// actually called, which is wrong if the same name gets redeclared in
-// between (see the "shouldn't affect the usage in f above" test case).
-type Resolver struct {
-	scopes                    []map[string]bool // scope stack; value is whether the name is fully defined yet
-	inFunctionDepth           int               // >0 while resolving a function body, for "return outside function" detection
-	inClassDepth              int               // >0 while resolving a class's methods, for "this outside a class" detection
-	currentFunctionKind       string            // kind of the innermost function being resolved: "function", "method", or "initializer"
-	currentClassHasSuperclass bool              // true while resolving the methods of a class that has a "< Superclass" clause
-}
-
-func NewResolver() *Resolver {
-	return &Resolver{}
-}
-
-func (r *Resolver) beginScope() {
-	r.scopes = append(r.scopes, map[string]bool{})
-}
-
-func (r *Resolver) endScope() {
-	r.scopes = r.scopes[:len(r.scopes)-1]
-}
-
-func (r *Resolver) declare(name string, line int) error {
-	if len(r.scopes) == 0 {
-		return nil
-	}
-	if _, ok := r.scopes[len(r.scopes)-1][name]; ok {
-		return fmt.Errorf("[line %d] Error at '%s': Already a variable with this name in this scope.", line, name)
-	}
-	r.scopes[len(r.scopes)-1][name] = false
-	return nil
-}
-
-func (r *Resolver) define(name string) {
-	if len(r.scopes) > 0 {
-		r.scopes[len(r.scopes)-1][name] = true
-	}
-}
-
-// resolveLocal records how many scopes out name is declared, or leaves
-// node unresolved (assumed global) if it isn't found in any local scope.
-func (r *Resolver) resolveLocal(node interface{}, name string) {
-	for i := len(r.scopes) - 1; i >= 0; i-- {
-		if _, ok := r.scopes[i][name]; ok {
-			locals[node] = len(r.scopes) - 1 - i
-			return
-		}
-	}
-}
-
-func (r *Resolver) resolveStmts(stmts []Stmt) error {
-	for _, s := range stmts {
-		if err := r.resolveStmt(s); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *Resolver) resolveStmt(stmt Stmt) error {
-	switch s := stmt.(type) {
-	case BlockStmt:
-		r.beginScope()
-		err := r.resolveStmts(s.Statements)
-		r.endScope()
-		return err
-	case VarStmt:
-		if err := r.declare(s.Name, s.Line); err != nil {
-			return err
-		}
-		if s.Initializer != nil {
-			if err := r.resolveExpr(s.Initializer); err != nil {
-				return err
-			}
-		}
-		r.define(s.Name)
-		return nil
-	case FunctionStmt:
-		if err := r.declare(s.Name, s.Line); err != nil {
-			return err
-		}
-		r.define(s.Name)
-		return r.resolveFunction(s, "function")
-	case ClassStmt:
-		if err := r.declare(s.Name, s.Line); err != nil {
-			return err
-		}
-		r.define(s.Name)
-		if s.Superclass != nil {
-			if s.Superclass.Name == s.Name {
-				return fmt.Errorf("[line %d] Error at '%s': A class can't inherit from itself.", s.Superclass.Line, s.Superclass.Name)
-			}
-			if err := r.resolveExpr(s.Superclass); err != nil {
-				return err
-			}
-		}
-		enclosingHasSuperclass := r.currentClassHasSuperclass
-		r.currentClassHasSuperclass = s.Superclass != nil
-		if s.Superclass != nil {
-			r.beginScope()
-			r.scopes[len(r.scopes)-1]["super"] = true
-		}
-		r.inClassDepth++
-		r.beginScope()
-		r.scopes[len(r.scopes)-1]["this"] = true
-		for _, method := range s.Methods {
-			kind := "method"
-			if method.Name == "init" {
-				kind = "initializer"
-			}
-			if err := r.resolveFunction(method, kind); err != nil {
-				r.endScope()
-				r.inClassDepth--
-				if s.Superclass != nil {
-					r.endScope()
-				}
-				r.currentClassHasSuperclass = enclosingHasSuperclass
-				return err
-			}
-		}
-		r.endScope()
-		r.inClassDepth--
-		if s.Superclass != nil {
-			r.endScope()
-		}
-		r.currentClassHasSuperclass = enclosingHasSuperclass
-		return nil
-	case ExprStmt:
-		return r.resolveExpr(s.Expr)
-	case PrintStmt:
-		return r.resolveExpr(s.Expr)
-	case ReturnStmt:
-		if r.inFunctionDepth == 0 {
-			return fmt.Errorf("[line %d] Error at 'return': Can't return from top-level code.", s.Line)
-		}
-		if s.Value != nil {
-			if r.currentFunctionKind == "initializer" {
-				return fmt.Errorf("[line %d] Error at 'return': Can't return a value from an initializer.", s.Line)
-			}
-			return r.resolveExpr(s.Value)
-		}
-		return nil
-	case IfStmt:
-		if err := r.resolveExpr(s.Condition); err != nil {
-			return err
-		}
-		if err := r.resolveStmt(s.ThenBranch); err != nil {
-			return err
-		}
-		if s.ElseBranch != nil {
-			return r.resolveStmt(s.ElseBranch)
-		}
-		return nil
-	case WhileStmt:
-		if err := r.resolveExpr(s.Condition); err != nil {
-			return err
-		}
-		return r.resolveStmt(s.Body)
-	}
-	return nil
-}
-
-func (r *Resolver) resolveFunction(s FunctionStmt, kind string) error {
-	enclosingKind := r.currentFunctionKind
-	r.currentFunctionKind = kind
-	r.inFunctionDepth++
-	r.beginScope()
-	for _, param := range s.Params {
-		if err := r.declare(param.Name, param.Line); err != nil {
-			r.endScope()
-			r.inFunctionDepth--
-			r.currentFunctionKind = enclosingKind
-			return err
-		}
-		r.define(param.Name)
-	}
-	err := r.resolveStmts(s.Body)
-	r.endScope()
-	r.inFunctionDepth--
-	r.currentFunctionKind = enclosingKind
-	return err
-}
-
-func (r *Resolver) resolveExpr(expr Expr) error {
-	switch e := expr.(type) {
-	case *VariableExpr:
-		if e.Name == "this" && r.inClassDepth == 0 {
-			return fmt.Errorf("[line %d] Error at 'this': Can't use 'this' outside of a class.", e.Line)
-		}
-		if len(r.scopes) > 0 {
-			if defined, ok := r.scopes[len(r.scopes)-1][e.Name]; ok && !defined {
-				return fmt.Errorf("[line %d] Error at '%s': Can't read local variable in its own initializer.", e.Line, e.Name)
-			}
-		}
-		r.resolveLocal(e, e.Name)
-		return nil
-	case *AssignExpr:
-		if err := r.resolveExpr(e.Value); err != nil {
-			return err
-		}
-		r.resolveLocal(e, e.Name)
-		return nil
-	case BinaryExpr:
-		if err := r.resolveExpr(e.Left); err != nil {
-			return err
-		}
-		return r.resolveExpr(e.Right)
-	case LogicalExpr:
-		if err := r.resolveExpr(e.Left); err != nil {
-			return err
-		}
-		return r.resolveExpr(e.Right)
-	case UnaryExpr:
-		return r.resolveExpr(e.Right)
-	case GroupingExpr:
-		return r.resolveExpr(e.Inner)
-	case CallExpr:
-		if err := r.resolveExpr(e.Callee); err != nil {
-			return err
-		}
-		for _, a := range e.Arguments {
-			if err := r.resolveExpr(a); err != nil {
-				return err
-			}
-		}
-		return nil
-	case *GetExpr:
-		return r.resolveExpr(e.Object)
-	case *SetExpr:
-		if err := r.resolveExpr(e.Value); err != nil {
-			return err
-		}
-		return r.resolveExpr(e.Object)
-	case *SuperExpr:
-		if r.inClassDepth == 0 {
-			return fmt.Errorf("[line %d] Error at 'super': Can't use 'super' outside of a class.", e.Line)
-		}
-		if !r.currentClassHasSuperclass {
-			return fmt.Errorf("[line %d] Error at 'super': Can't use 'super' in a class with no superclass.", e.Line)
-		}
-		r.resolveLocal(e, "super")
-		return nil
-	}
-	return nil
 }
 
 // evaluate walks an Expr tree and returns its runtime value (bool,
@@ -1090,19 +758,14 @@ func evaluate(e Expr, env *Environment) (interface{}, error) {
 		case "!=":
 			return left != right, nil
 		}
-	case *VariableExpr:
-		if distance, ok := locals[expr]; ok {
-			return env.GetAt(distance, expr.Name), nil
-		}
-		return globalEnv.Get(expr.Name, expr.Line)
-	case *AssignExpr:
+	case VariableExpr:
+		return env.Get(expr.Name, expr.Line)
+	case AssignExpr:
 		value, err := evaluate(expr.Value, env)
 		if err != nil {
 			return nil, err
 		}
-		if distance, ok := locals[expr]; ok {
-			env.AssignAt(distance, expr.Name, value)
-		} else if err := globalEnv.Assign(expr.Name, value, expr.Line); err != nil {
+		if err := env.Assign(expr.Name, value, expr.Line); err != nil {
 			return nil, err
 		}
 		return value, nil
@@ -1139,41 +802,6 @@ func evaluate(e Expr, env *Environment) (interface{}, error) {
 			return nil, &RuntimeError{fmt.Sprintf("Expected %d arguments but got %d.", callable.Arity(), len(args)), expr.Line}
 		}
 		return callable.Call(args)
-	case *GetExpr:
-		object, err := evaluate(expr.Object, env)
-		if err != nil {
-			return nil, err
-		}
-		instance, ok := object.(*LoxInstance)
-		if !ok {
-			return nil, &RuntimeError{"Only instances have properties.", expr.Line}
-		}
-		return instance.Get(expr.Name, expr.Line)
-	case *SetExpr:
-		object, err := evaluate(expr.Object, env)
-		if err != nil {
-			return nil, err
-		}
-		instance, ok := object.(*LoxInstance)
-		if !ok {
-			return nil, &RuntimeError{"Only instances have fields.", expr.Line}
-		}
-		value, err := evaluate(expr.Value, env)
-		if err != nil {
-			return nil, err
-		}
-		instance.Set(expr.Name, value)
-		return value, nil
-	case *SuperExpr:
-		distance := locals[expr]
-		superclass := env.GetAt(distance, "super").(*LoxClass)
-		instance := env.GetAt(distance-1, "this").(*LoxInstance)
-		method, owner, ok := superclass.FindMethod(expr.Method)
-		if !ok {
-			return nil, &RuntimeError{fmt.Sprintf("Undefined property '%s'.", expr.Method), expr.Line}
-		}
-		fn := &LoxFunction{Declaration: method, Closure: owner.Closure, IsInitializer: method.Name == "init"}
-		return fn.Bind(instance), nil
 	}
 	return nil, fmt.Errorf("cannot evaluate expression of type %T", e)
 }
@@ -1186,8 +814,6 @@ type Environment struct {
 	parent *Environment
 }
 
-var globalEnv *Environment
-
 func NewEnvironment() *Environment {
 	env := &Environment{values: map[string]interface{}{}}
 	env.Define("clock", &NativeFunction{
@@ -1196,7 +822,6 @@ func NewEnvironment() *Environment {
 			return float64(time.Now().Unix()), nil
 		},
 	})
-	globalEnv = env
 	return env
 }
 
@@ -1222,25 +847,18 @@ func (n *NativeFunction) Call(args []interface{}) (interface{}, error) {
 // LoxFunction is a user-defined ("fun") function: its declaration plus
 // the environment it closed over at definition time.
 type LoxFunction struct {
-	Declaration   FunctionStmt
-	Closure       *Environment
-	IsInitializer bool // true for a class's "init" method: always returns "this"
+	Declaration FunctionStmt
+	Closure     *Environment
 }
 
 func (f *LoxFunction) Arity() int { return len(f.Declaration.Params) }
 
-// Bind returns a copy of f whose closure has "this" bound to instance,
-// used when a method is accessed off an instance.
-func (f *LoxFunction) Bind(instance *LoxInstance) *LoxFunction {
-	env := NewChildEnvironment(f.Closure)
-	env.Define("this", instance)
-	return &LoxFunction{Declaration: f.Declaration, Closure: env, IsInitializer: f.IsInitializer}
-}
-
 func (f *LoxFunction) Call(args []interface{}) (interface{}, error) {
-	callEnv := NewChildEnvironment(f.Closure)
+	// Parameters are defined in the enclosing scope for now, so they outlive
+	// the call. The next stage gives each call an environment of its own.
+	callEnv := f.Closure
 	for i, param := range f.Declaration.Params {
-		callEnv.Define(param.Name, args[i])
+		callEnv.Define(param, args[i])
 	}
 	for _, stmt := range f.Declaration.Body {
 		err := execute(stmt, callEnv)
@@ -1248,15 +866,9 @@ func (f *LoxFunction) Call(args []interface{}) (interface{}, error) {
 			continue
 		}
 		if ret, ok := err.(*returnSignal); ok {
-			if f.IsInitializer {
-				return f.Closure.Get("this", 0)
-			}
 			return ret.Value, nil
 		}
 		return nil, err
-	}
-	if f.IsInitializer {
-		return f.Closure.Get("this", 0)
 	}
 	return nil, nil
 }
@@ -1312,25 +924,6 @@ func (env *Environment) Assign(name string, value interface{}, line int) error {
 	return &RuntimeError{fmt.Sprintf("Undefined variable '%s'.", name), line}
 }
 
-// ancestor walks exactly distance parents up from env — used with a
-// resolver-computed distance, where (unlike Get/Assign's dynamic search)
-// the variable is guaranteed to exist at exactly that scope.
-func (env *Environment) ancestor(distance int) *Environment {
-	e := env
-	for i := 0; i < distance; i++ {
-		e = e.parent
-	}
-	return e
-}
-
-func (env *Environment) GetAt(distance int, name string) interface{} {
-	return env.ancestor(distance).values[name]
-}
-
-func (env *Environment) AssignAt(distance int, name string, value interface{}) {
-	env.ancestor(distance).values[name] = value
-}
-
 // Stmt is a parsed Lox statement, executed by the "run" command.
 type Stmt interface{}
 
@@ -1343,7 +936,6 @@ type PrintStmt struct {
 type VarStmt struct {
 	Name        string
 	Initializer Expr // nil if no initializer
-	Line        int
 }
 
 // ExprStmt is a bare expression, evaluated for its side effects and
@@ -1371,98 +963,17 @@ type WhileStmt struct {
 	Body      Stmt
 }
 
-// Param is a function parameter name paired with the line it was
-// declared on, for resolver error reporting.
-type Param struct {
-	Name string
-	Line int
-}
-
 // FunctionStmt is "fun name(params...) { body }".
 type FunctionStmt struct {
 	Name   string
-	Params []Param
+	Params []string
 	Body   []Stmt
-	Line   int
 }
 
 // ReturnStmt is "return [value];". Value is nil for a bare "return;".
 type ReturnStmt struct {
 	Value Expr
 	Line  int
-}
-
-// ClassStmt is "class name [< superclass] { methods... }". Superclass is
-// nil if there's no "< superclass" clause.
-type ClassStmt struct {
-	Name       string
-	Superclass *VariableExpr
-	Methods    []FunctionStmt
-	Line       int
-}
-
-// LoxClass is a class value: printable and callable to construct instances.
-type LoxClass struct {
-	Name       string
-	Superclass *LoxClass
-	Methods    map[string]FunctionStmt
-	Closure    *Environment // environment the class was declared in, for binding methods
-}
-
-// FindMethod looks up name in c's own methods, then walks up the
-// superclass chain. It also returns the class that actually defines the
-// method, since that's the class whose Closure the method should be
-// evaluated against.
-func (c *LoxClass) FindMethod(name string) (FunctionStmt, *LoxClass, bool) {
-	if method, ok := c.Methods[name]; ok {
-		return method, c, true
-	}
-	if c.Superclass != nil {
-		return c.Superclass.FindMethod(name)
-	}
-	return FunctionStmt{}, nil, false
-}
-
-func (c *LoxClass) Arity() int {
-	if init, _, ok := c.FindMethod("init"); ok {
-		return len(init.Params)
-	}
-	return 0
-}
-
-func (c *LoxClass) Call(args []interface{}) (interface{}, error) {
-	instance := &LoxInstance{Class: c}
-	if init, owner, ok := c.FindMethod("init"); ok {
-		fn := &LoxFunction{Declaration: init, Closure: owner.Closure, IsInitializer: true}
-		if _, err := fn.Bind(instance).Call(args); err != nil {
-			return nil, err
-		}
-	}
-	return instance, nil
-}
-
-// LoxInstance is an instance of a LoxClass.
-type LoxInstance struct {
-	Class  *LoxClass
-	Fields map[string]interface{}
-}
-
-func (i *LoxInstance) Get(name string, line int) (interface{}, error) {
-	if value, ok := i.Fields[name]; ok {
-		return value, nil
-	}
-	if method, owner, ok := i.Class.FindMethod(name); ok {
-		fn := &LoxFunction{Declaration: method, Closure: owner.Closure, IsInitializer: method.Name == "init"}
-		return fn.Bind(i), nil
-	}
-	return nil, &RuntimeError{fmt.Sprintf("Undefined property '%s'.", name), line}
-}
-
-func (i *LoxInstance) Set(name string, value interface{}) {
-	if i.Fields == nil {
-		i.Fields = map[string]interface{}{}
-	}
-	i.Fields[name] = value
 }
 
 // parseProgram parses a full "run"-mode source as a sequence of
@@ -1492,53 +1003,7 @@ func (p *Parser) parseDeclaration() (Stmt, error) {
 	if p.tokens[p.pos].Type == "FUN" {
 		return p.parseFunctionDecl()
 	}
-	if p.tokens[p.pos].Type == "CLASS" {
-		return p.parseClassDecl()
-	}
 	return p.parseStatement()
-}
-
-// parseClassDecl parses "class name { }".
-func (p *Parser) parseClassDecl() (Stmt, error) {
-	p.pos++ // consume "class"
-	if p.tokens[p.pos].Type != "IDENTIFIER" {
-		tok := p.tokens[p.pos]
-		return nil, fmt.Errorf("[line %d] Error at %s: Expect class name.", tok.Line, describeToken(tok))
-	}
-	nameTok := p.tokens[p.pos]
-	p.pos++
-	var superclass *VariableExpr
-	if p.tokens[p.pos].Type == "LESS" {
-		p.pos++
-		if p.tokens[p.pos].Type != "IDENTIFIER" {
-			tok := p.tokens[p.pos]
-			return nil, fmt.Errorf("[line %d] Error at %s: Expect superclass name.", tok.Line, describeToken(tok))
-		}
-		superTok := p.tokens[p.pos]
-		p.pos++
-		superclass = &VariableExpr{Name: superTok.Lexeme, Line: superTok.Line}
-	}
-	if err := p.expectToken("LEFT_BRACE", "'{' before class body"); err != nil {
-		return nil, err
-	}
-	var methods []FunctionStmt
-	for p.tokens[p.pos].Type != "RIGHT_BRACE" && p.tokens[p.pos].Type != "EOF" {
-		if p.tokens[p.pos].Type != "IDENTIFIER" {
-			tok := p.tokens[p.pos]
-			return nil, fmt.Errorf("[line %d] Error at %s: Expect method name.", tok.Line, describeToken(tok))
-		}
-		methodNameTok := p.tokens[p.pos]
-		p.pos++
-		method, err := p.parseFunctionBody(methodNameTok, "method")
-		if err != nil {
-			return nil, err
-		}
-		methods = append(methods, method.(FunctionStmt))
-	}
-	if err := p.expectToken("RIGHT_BRACE", "'}' after class body"); err != nil {
-		return nil, err
-	}
-	return ClassStmt{Name: nameTok.Lexeme, Superclass: superclass, Methods: methods, Line: nameTok.Line}, nil
 }
 
 // parseBlockBody parses statements up to (and consuming) a closing "}",
@@ -1568,27 +1033,19 @@ func (p *Parser) parseFunctionDecl() (Stmt, error) {
 		tok := p.tokens[p.pos]
 		return nil, fmt.Errorf("[line %d] Error at %s: Expect function name.", tok.Line, describeToken(tok))
 	}
-	nameTok := p.tokens[p.pos]
+	name := p.tokens[p.pos].Lexeme
 	p.pos++
-	return p.parseFunctionBody(nameTok, "function")
-}
-
-// parseFunctionBody parses "(params...) { body }", shared by top-level
-// function declarations and method declarations inside a class body
-// (which don't have a leading "fun" keyword or already-consumed name).
-func (p *Parser) parseFunctionBody(nameTok Token, kind string) (Stmt, error) {
-	name := nameTok.Lexeme
-	if err := p.expectToken("LEFT_PAREN", fmt.Sprintf("'(' after %s name", kind)); err != nil {
+	if err := p.expectToken("LEFT_PAREN", "'(' after function name"); err != nil {
 		return nil, err
 	}
-	var params []Param
+	var params []string
 	if p.tokens[p.pos].Type != "RIGHT_PAREN" {
 		for {
 			if p.tokens[p.pos].Type != "IDENTIFIER" {
 				tok := p.tokens[p.pos]
 				return nil, fmt.Errorf("[line %d] Error at %s: Expect parameter name.", tok.Line, describeToken(tok))
 			}
-			params = append(params, Param{Name: p.tokens[p.pos].Lexeme, Line: p.tokens[p.pos].Line})
+			params = append(params, p.tokens[p.pos].Lexeme)
 			p.pos++
 			if p.tokens[p.pos].Type != "COMMA" {
 				break
@@ -1599,14 +1056,14 @@ func (p *Parser) parseFunctionBody(nameTok Token, kind string) (Stmt, error) {
 	if err := p.expectToken("RIGHT_PAREN", "')' after parameters"); err != nil {
 		return nil, err
 	}
-	if err := p.expectToken("LEFT_BRACE", fmt.Sprintf("'{' before %s body", kind)); err != nil {
+	if err := p.expectToken("LEFT_BRACE", "'{' before function body"); err != nil {
 		return nil, err
 	}
 	body, err := p.parseBlockBody()
 	if err != nil {
 		return nil, err
 	}
-	return FunctionStmt{Name: name, Params: params, Body: body, Line: nameTok.Line}, nil
+	return FunctionStmt{Name: name, Params: params, Body: body}, nil
 }
 
 // parseVarDecl parses "var name [= initializer];", used both directly as
@@ -1617,8 +1074,7 @@ func (p *Parser) parseVarDecl() (Stmt, error) {
 		tok := p.tokens[p.pos]
 		return nil, fmt.Errorf("[line %d] Error at %s: Expect variable name.", tok.Line, describeToken(tok))
 	}
-	nameTok := p.tokens[p.pos]
-	name := nameTok.Lexeme
+	name := p.tokens[p.pos].Lexeme
 	p.pos++
 	var initializer Expr
 	if p.tokens[p.pos].Type == "EQUAL" {
@@ -1632,7 +1088,7 @@ func (p *Parser) parseVarDecl() (Stmt, error) {
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
 	}
-	return VarStmt{Name: name, Initializer: initializer, Line: nameTok.Line}, nil
+	return VarStmt{name, initializer}, nil
 }
 
 func (p *Parser) parseStatement() (Stmt, error) {
@@ -1874,30 +1330,6 @@ func execute(stmt Stmt, env *Environment) error {
 		}
 	case FunctionStmt:
 		env.Define(s.Name, &LoxFunction{Declaration: s, Closure: env})
-		return nil
-	case ClassStmt:
-		var superclass *LoxClass
-		if s.Superclass != nil {
-			superVal, err := evaluate(s.Superclass, env)
-			if err != nil {
-				return err
-			}
-			var ok bool
-			superclass, ok = superVal.(*LoxClass)
-			if !ok {
-				return &RuntimeError{"Superclass must be a class.", s.Superclass.Line}
-			}
-		}
-		methodClosure := env
-		if superclass != nil {
-			methodClosure = NewChildEnvironment(env)
-			methodClosure.Define("super", superclass)
-		}
-		methods := map[string]FunctionStmt{}
-		for _, method := range s.Methods {
-			methods[method.Name] = method
-		}
-		env.Define(s.Name, &LoxClass{Name: s.Name, Superclass: superclass, Methods: methods, Closure: methodClosure})
 		return nil
 	case ReturnStmt:
 		var value interface{}
