@@ -5,6 +5,8 @@ KEYS
   t            run the tests for the selected stage
   e            open the stage's files in $EDITOR
   s            show the reference solution
+  n            learning notes (course primer on a header row)
+  f            notes: reveal hints    solution: full file
   c            jump to the current stage
   /            filter        esc  clear
   J / K        scroll the right pane
