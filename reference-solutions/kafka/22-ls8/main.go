@@ -513,6 +513,14 @@ func writePartitionLog(topicName string, partition int32, data []byte) error {
 		return err
 	}
 	defer f.Close()
+	// One record batch for now; the next stage writes everything the
+	// request carried.
+	if len(data) >= 12 {
+		batchLength := int(binary.BigEndian.Uint32(data[8:12]))
+		if end := 12 + batchLength; end <= len(data) {
+			data = data[:end]
+		}
+	}
 	_, err = f.Write(data)
 	return err
 }
