@@ -56,18 +56,13 @@ type Job struct {
 
 var jobs []*Job
 
-// nextJobNumber returns the next job number to assign: 1 if the table is
-// empty, otherwise one more than the highest number currently in use.
-// Numbers are recycled as jobs are reaped, so this can't be a monotonic
-// counter.
+// jobCounter hands out job numbers. It only ever counts up for now; the next
+// stage reuses the numbers that reaped jobs leave free.
+var jobCounter int
+
 func nextJobNumber() int {
-	max := 0
-	for _, j := range jobs {
-		if j.Number > max {
-			max = j.Number
-		}
-	}
-	return max + 1
+	jobCounter++
+	return jobCounter
 }
 
 // reapJobs checks every background job for completion, printing and

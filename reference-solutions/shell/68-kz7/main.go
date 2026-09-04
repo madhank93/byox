@@ -430,6 +430,7 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 			return
 		}
 		if len(args) >= 2 && args[0] == "-w" {
+			// -w writes the whole history, replacing whatever the file held.
 			os.WriteFile(args[1], []byte(strings.Join(history, "\n")+"\n"), 0644)
 			historyFlushed = len(history)
 			return
@@ -736,6 +737,20 @@ func readLine(reader *bufio.Reader) (string, bool) {
 	}
 }
 
+// flushHistoryFile appends only the entries not yet written to path, so
+// repeated appends never duplicate what the file already holds.
+func flushHistoryFile(path string) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	for _, l := range history[historyFlushed:] {
+		fmt.Fprintln(f, l)
+	}
+	f.Close()
+	historyFlushed = len(history)
+}
+
 // loadHistoryFile appends the contents of path to history (skipping blank
 // lines), used both for HISTFILE-on-startup and history -r.
 func loadHistoryFile(path string) {
@@ -750,24 +765,10 @@ func loadHistoryFile(path string) {
 	}
 }
 
-// flushHistoryFile appends every history entry not yet flushed to path,
-// used both for exiting the shell and history -a.
-func flushHistoryFile(path string) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return
-	}
-	for _, l := range history[historyFlushed:] {
-		fmt.Fprintln(f, l)
-	}
-	f.Close()
-	historyFlushed = len(history)
-}
-
-// exitShell appends any unflushed history to HISTFILE (if set) and exits.
+// exitShell writes the session's history to HISTFILE (if set) and exits.
 func exitShell() {
 	if path := os.Getenv("HISTFILE"); path != "" {
-		flushHistoryFile(path)
+		os.WriteFile(path, []byte(strings.Join(history, "\n")+"\n"), 0644)
 	}
 	os.Exit(0)
 }
@@ -778,6 +779,7 @@ func main() {
 		defer restoreTermios(fd, oldState)
 	}
 
+	// A shell started with HISTFILE set picks up where the last one left off.
 	if path := os.Getenv("HISTFILE"); path != "" {
 		loadHistoryFile(path)
 		historyFlushed = len(history)

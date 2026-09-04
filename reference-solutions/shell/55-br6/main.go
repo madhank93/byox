@@ -241,6 +241,11 @@ func splitPipeline(tokens []string) [][]string {
 // in-process, writing to its end of the pipe — safe because none of our
 // builtins read stdin, so there's nothing to run concurrently with.
 func runPipeline(segments [][]string) {
+	// Two external commands for now: builtins come next stage, longer
+	// pipelines the stage after.
+	if len(segments) > 2 {
+		segments = segments[:2]
+	}
 	n := len(segments)
 	cmds := make([]*exec.Cmd, 0, n)
 	var stdin *os.File // read end of the previous segment's pipe, or nil for the first segment
@@ -266,38 +271,31 @@ func runPipeline(segments [][]string) {
 			out = pipeWriter
 		}
 
-		if isBuiltin(command) {
-			runBuiltin(command, args, out, os.Stderr)
-			if pipeWriter != nil {
-				pipeWriter.Close()
-			}
-		} else {
-			path, err := exec.LookPath(command)
-			if err != nil {
-				fmt.Printf("%s: command not found\n", command)
-				return
-			}
-			cmd := exec.Command(path, args...)
-			cmd.Args[0] = command
-			cmd.Stderr = os.Stderr
-			cmd.Stdout = out
-			if stdin != nil {
-				cmd.Stdin = stdin
-			} else {
-				cmd.Stdin = os.Stdin
-			}
-
-			if err := cmd.Start(); err != nil {
-				fmt.Printf("%v\n", err)
-				return
-			}
-			// The child now holds its own dup of these fds; the parent's
-			// copy must be closed so EOF propagates once the writer exits.
-			if pipeWriter != nil {
-				pipeWriter.Close()
-			}
-			cmds = append(cmds, cmd)
+		path, err := exec.LookPath(command)
+		if err != nil {
+			fmt.Printf("%s: command not found\n", command)
+			return
 		}
+		cmd := exec.Command(path, args...)
+		cmd.Args[0] = command
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = out
+		if stdin != nil {
+			cmd.Stdin = stdin
+		} else {
+			cmd.Stdin = os.Stdin
+		}
+
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
+		// The child now holds its own dup of these fds; the parent's copy
+		// must be closed so EOF propagates once the writer exits.
+		if pipeWriter != nil {
+			pipeWriter.Close()
+		}
+		cmds = append(cmds, cmd)
 
 		if stdin != nil {
 			stdin.Close()

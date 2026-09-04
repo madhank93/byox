@@ -430,12 +430,9 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 			return
 		}
 		if len(args) >= 2 && args[0] == "-w" {
+			// -w writes the whole history, replacing whatever the file held.
 			os.WriteFile(args[1], []byte(strings.Join(history, "\n")+"\n"), 0644)
 			historyFlushed = len(history)
-			return
-		}
-		if len(args) >= 2 && args[0] == "-a" {
-			flushHistoryFile(args[1])
 			return
 		}
 		start := 0
@@ -750,25 +747,7 @@ func loadHistoryFile(path string) {
 	}
 }
 
-// flushHistoryFile appends every history entry not yet flushed to path,
-// used both for exiting the shell and history -a.
-func flushHistoryFile(path string) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return
-	}
-	for _, l := range history[historyFlushed:] {
-		fmt.Fprintln(f, l)
-	}
-	f.Close()
-	historyFlushed = len(history)
-}
-
-// exitShell appends any unflushed history to HISTFILE (if set) and exits.
 func exitShell() {
-	if path := os.Getenv("HISTFILE"); path != "" {
-		flushHistoryFile(path)
-	}
 	os.Exit(0)
 }
 
@@ -776,11 +755,6 @@ func main() {
 	fd := int(os.Stdin.Fd())
 	if oldState, err := enableCbreakMode(fd); err == nil {
 		defer restoreTermios(fd, oldState)
-	}
-
-	if path := os.Getenv("HISTFILE"); path != "" {
-		loadHistoryFile(path)
-		historyFlushed = len(history)
 	}
 
 	reader := bufio.NewReader(os.Stdin)

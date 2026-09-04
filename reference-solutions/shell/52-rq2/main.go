@@ -56,24 +56,20 @@ type Job struct {
 
 var jobs []*Job
 
-// nextJobNumber returns the next job number to assign: 1 if the table is
-// empty, otherwise one more than the highest number currently in use.
-// Numbers are recycled as jobs are reaped, so this can't be a monotonic
-// counter.
+// jobCounter hands out job numbers. It only ever counts up for now; the next
+// stage reuses the numbers that reaped jobs leave free.
+var jobCounter int
+
 func nextJobNumber() int {
-	max := 0
-	for _, j := range jobs {
-		if j.Number > max {
-			max = j.Number
-		}
-	}
-	return max + 1
+	jobCounter++
+	return jobCounter
 }
 
 // reapJobs checks every background job for completion, printing and
 // removing each one that has finished. Running jobs are only printed when
-// showRunning is true (the jobs builtin lists everything; the automatic
-// reap before each prompt only announces newly-finished jobs).
+// showRunning is true. For now this happens only when the jobs builtin asks;
+// the next stage also reaps before each prompt, so a job that finished while
+// you were typing is announced without being asked.
 func reapJobs(showRunning bool) {
 	var remaining []*Job
 	for i, j := range jobs {
@@ -560,7 +556,6 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		reapJobs(false)
 		fmt.Print("$ ")
 
 		line, ok := readLine(reader)

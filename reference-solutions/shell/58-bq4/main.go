@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"sort"
-	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -420,15 +419,8 @@ func runBuiltin(command string, args []string, out, errOut io.Writer) {
 	case "jobs":
 		reapJobs(out, true)
 	case "history":
-		start := 0
-		if len(args) >= 1 {
-			if n, err := strconv.Atoi(args[0]); err == nil && n < len(history) {
-				start = len(history) - n
-			}
-		}
-		for i := start; i < len(history); i++ {
-			fmt.Fprintf(out, "%5d  %s\n", i+1, history[i])
-		}
+		// Recognised as a builtin so it is not looked up on PATH; listing
+		// the entries comes next stage.
 	}
 }
 

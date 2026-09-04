@@ -599,7 +599,8 @@ func readLine(reader *bufio.Reader) (string, bool) {
 				fmt.Print("\b \b")
 			}
 			disarmTab()
-		case 27: // ESC: start of an arrow-key escape sequence (ESC [ A/B/C/D)
+		case 27: // ESC: start of an arrow-key escape sequence (ESC [ A/B/C/D).
+			// Up walks back through history; down comes next stage.
 			b1, err := reader.ReadByte()
 			if err != nil || b1 != '[' {
 				break
@@ -615,17 +616,6 @@ func readLine(reader *bufio.Reader) (string, bool) {
 					fmt.Print("\b \b")
 				}
 				buf = []byte(history[historyPos])
-				fmt.Print(string(buf))
-			case b2 == 'B' && historyPos < len(history): // down arrow
-				historyPos++
-				for range buf {
-					fmt.Print("\b \b")
-				}
-				if historyPos == len(history) {
-					buf = nil
-				} else {
-					buf = []byte(history[historyPos])
-				}
 				fmt.Print(string(buf))
 			}
 			disarmTab()
