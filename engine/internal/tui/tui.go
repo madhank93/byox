@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -109,7 +110,13 @@ type model struct {
 	rend    *glamour.TermRenderer
 	rendW   int
 
-	running   bool
+	running  bool
+	runStart time.Time // when the current run began, for the elapsed clock
+
+	// showHelp raises the help pop-up, composited over the frame so the stage
+	// you are reading stays visible behind it.
+	showHelp  bool
+	helpVP    viewport.Model
 	runCourse int // course index captured at startRun
 	runPassed *bool
 	runLog    logBuffer
@@ -611,6 +618,7 @@ func (m *model) startRun() tea.Cmd {
 	ch := make(chan tea.Msg, 64)
 	m.runCh = ch
 	m.running = true
+	m.runStart = time.Now()
 	m.runCourse = ci
 	m.runPassed = nil
 	m.runLog.Reset()
@@ -654,6 +662,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.width <= 0 {
 			m.width = 80
 		}
+		// The help pop-up is three quarters of the frame, less border and padding.
+		m.helpVP.Width = max(min(msg.Width*3/4-6, 72), 24)
+		m.helpVP.Height = max(min(msg.Height-10, 24), 5)
+		m.helpVP.SetContent(helpText)
 		if m.height <= 0 {
 			m.height = 24
 		}
@@ -793,11 +805,38 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The help pop-up owns the keyboard: it scrolls, and every other key closes
+	// it. Anything else would fire an action hidden behind the box.
+	if m.showHelp {
+		switch key {
+		case "up", "k":
+			m.helpVP.ScrollUp(1)
+		case "down", "j":
+			m.helpVP.ScrollDown(1)
+		case "pgup", "ctrl+u":
+			m.helpVP.HalfPageUp()
+		case "pgdown", "ctrl+d":
+			m.helpVP.HalfPageDown()
+		case "ctrl+c":
+			return m, tea.Quit
+		default:
+			m.showHelp = false
+			// A pop-up rewrites the middle of the frame and nothing else, so the
+			// differential renderer can leave fragments behind when it closes.
+			return m, tea.ClearScreen
+		}
+		return m, nil
+	}
+
 	if key != "esc" {
 		m.escArmed = false
 	}
 
 	switch key {
+	case "?":
+		m.showHelp = true
+		m.helpVP.GotoTop()
+		return m, tea.ClearScreen
 	case "q":
 		if !m.running {
 			return m, tea.Quit
@@ -937,7 +976,34 @@ func (m *model) View() string {
 	right := m.rightView()
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, sepView(max(m.height-2, 1)), right))
 	b.WriteString("\n" + m.footerView())
-	return b.String()
+	frame := b.String()
+
+	if box := m.popup(); box != "" {
+		x, y := center(m.width, len(strings.Split(frame, "\n")), lipgloss.Width(box), lipgloss.Height(box))
+		frame = overlay(frame, box, x, y)
+	}
+	return frame
+}
+
+// popup returns the pop-up to composite over the frame, or "" when there is
+// none.
+func (m *model) popup() string {
+	if !m.showHelp {
+		return ""
+	}
+	return modal("help", m.helpVP.View(),
+		keyCap.Render("↑↓")+keyLabel.Render(" scroll")+keyDot.Render(" · ")+
+			keyCap.Render("any key")+keyLabel.Render(" close"), m.width*3/4)
+}
+
+// elapsed formats a run's wall time. A test run that has wedged and one that is
+// merely slow look identical without a clock on them.
+func elapsed(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%ds", s)
+	}
+	return fmt.Sprintf("%dm%02ds", s/60, s%60)
 }
 
 // topBar shows the cursor's course with a full-width progress bar.
@@ -1098,7 +1164,8 @@ func (m *model) rightView() string {
 	title := ""
 	switch {
 	case m.running:
-		title = runStyle.Render(m.spin.View() + "running tests…")
+		title = runStyle.Render(m.spin.View()+"running tests… ") +
+			helpStyle.Render(elapsed(time.Since(m.runStart)))
 	case m.runPassed != nil && m.mode == modeLog:
 		if *m.runPassed {
 			title = passStyle.Render("PASS ✓ stage complete — next stage unlocked")
@@ -1166,6 +1233,7 @@ func (m *model) footerView() string {
 		[2]string{"/", "filter"},
 		[2]string{"c", "current"},
 		[2]string{"J/K", "scroll"},
+		[2]string{"?", "help"},
 		[2]string{"q", "quit"},
 	)
 }
