@@ -20,9 +20,9 @@ import (
 
 	"github.com/madhank93/byox/course"
 	"github.com/madhank93/byox/diff"
-	"github.com/madhank93/byox/learn"
 	"github.com/madhank93/byox/internal/progress"
 	"github.com/madhank93/byox/internal/runner"
+	"github.com/madhank93/byox/learn"
 )
 
 type rightMode int
