@@ -127,6 +127,10 @@ type model struct {
 	watchedSlug string
 
 	solutionFull bool
+
+	// conceptCache holds each stage's frontmatter tags, keyed by course and
+	// stage index, so the filter does not re-read files on every keystroke.
+	conceptCache map[[2]int][]string
 	hintsShown   bool // 's' view: diff against previous stage (false) or full file (true)
 
 	err error
@@ -177,6 +181,29 @@ func (m *model) Init() tea.Cmd { return listenWatch(m.watchCh) }
 
 // --- rows / helpers ---
 
+// matchesConcept reports whether a stage's note is tagged with something
+// containing f, so "/binary" finds every stage that drills binary parsing
+// regardless of what those stages are called. Tags are read once per stage
+// and cached: filtering runs on every keystroke.
+func (m *model) matchesConcept(ci, si int, f string) bool {
+	key := [2]int{ci, si}
+	tags, ok := m.conceptCache[key]
+	if !ok {
+		item := m.courses[ci]
+		tags = learn.Concepts(m.root, item.ref.Slug, si+1, item.def.Stages[si].Slug)
+		if m.conceptCache == nil {
+			m.conceptCache = map[[2]int][]string{}
+		}
+		m.conceptCache[key] = tags
+	}
+	for _, tag := range tags {
+		if strings.Contains(strings.ToLower(tag), f) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *model) rebuildRows() {
 	m.rows = m.rows[:0]
 	f := strings.ToLower(m.filter)
@@ -193,7 +220,8 @@ func (m *model) rebuildRows() {
 		for si, s := range c.def.Stages {
 			if f != "" &&
 				!strings.Contains(strings.ToLower(s.Name), f) &&
-				!strings.Contains(strings.ToLower(s.Slug), f) {
+				!strings.Contains(strings.ToLower(s.Slug), f) &&
+				!m.matchesConcept(ci, si, f) {
 				continue
 			}
 			m.rows = append(m.rows, row{course: ci, stage: si})
