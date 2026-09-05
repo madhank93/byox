@@ -55,8 +55,11 @@ has the task; what they lack is the model.
    words, from the specs and the source.
 2. **Concept over instruction.** If a sentence would still be true with the
    tester deleted, it belongs here. If it starts "the tester will…", it does not.
-3. **Hints ladder, never the answer.** Three steps: a nudge at the idea, an
-   approach, then the specific API. The worked solution already lives in
-   `reference-solutions/` behind a spoiler — don't duplicate it here.
+3. **Hints ladder, never the answer.** Scale it to the stage: a hard stage
+   gets all three steps — a nudge at the idea, an approach, then the specific
+   API — while an easy one is often done after the nudge. Padding a one-line
+   stage out to three hints just buries the useful one. The worked solution
+   already lives in `reference-solutions/` behind a spoiler; don't duplicate
+   it here.
 4. **Link the primary source.** An RFC, a file-format spec, the Go package
    docs. Prefer the thing itself over a blog post about the thing.

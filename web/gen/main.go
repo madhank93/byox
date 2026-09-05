@@ -165,6 +165,9 @@ func run() error {
 	if err := writePrimers(root, courses); err != nil {
 		return err
 	}
+	if err := writeConceptIndex(root, courses, stages); err != nil {
+		return err
+	}
 	return writeCatalog(root, courses, stages)
 }
 
@@ -363,6 +366,57 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 
 	name := e.Course + "-" + e.Slug + ".md"
 	return os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644)
+}
+
+// writeConceptIndex emits a page grouping every stage by the concepts its
+// note declares, so a reader can approach the catalog by idea — "show me
+// everything that drills binary parsing" — rather than by course. The tags
+// come from the notes' own frontmatter, which is otherwise unread.
+func writeConceptIndex(root string, courses []courseInfo, stages []stageEntry) error {
+	type ref struct {
+		course, courseName, slug, title string
+		index                           int
+	}
+	byConcept := map[string][]ref{}
+	for _, e := range stages {
+		for _, tag := range learn.Concepts(root, e.Course, e.Index, e.Slug) {
+			byConcept[tag] = append(byConcept[tag], ref{e.Course, e.CourseName, e.Slug, e.Title, e.Index})
+		}
+	}
+	if len(byConcept) == 0 {
+		return nil
+	}
+
+	tags := make([]string, 0, len(byConcept))
+	for tag := range byConcept {
+		tags = append(tags, tag)
+	}
+	// Most-covered concepts first: the ones worth reading as a thread.
+	sort.Slice(tags, func(i, j int) bool {
+		if n, m := len(byConcept[tags[i]]), len(byConcept[tags[j]]); n != m {
+			return n > m
+		}
+		return tags[i] < tags[j]
+	})
+
+	var b strings.Builder
+	b.WriteString("---\ntitle: \"Concepts\"\ndescription: \"Every stage grouped by the idea it teaches, so the catalog can be read by concept rather than by course.\"\n---\n\n")
+	fmt.Fprintf(&b, "%d concepts across %d stages. Each stage's note declares what it teaches; this page inverts that.\n\n", len(tags), len(stages))
+	for _, tag := range tags {
+		refs := byConcept[tag]
+		sort.Slice(refs, func(i, j int) bool {
+			if refs[i].course != refs[j].course {
+				return refs[i].course < refs[j].course
+			}
+			return refs[i].index < refs[j].index
+		})
+		fmt.Fprintf(&b, "## %s\n\n", tag)
+		for _, r := range refs {
+			fmt.Fprintf(&b, "- **%s** stage %d — [%s](/catalog/?stage=%s-%s)\n", r.courseName, r.index, r.title, r.course, r.slug)
+		}
+		b.WriteString("\n")
+	}
+	return os.WriteFile(filepath.Join(root, primersDir, "concepts.md"), []byte(b.String()), 0o644)
 }
 
 // writePrimers turns each course's learn/<course>/index.md into a Starlight

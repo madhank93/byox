@@ -33,6 +33,48 @@ func Note(root, course string, index int, slug string) (string, bool) {
 	return read(filepath.Join(root, Dir, course, StageDir(index, slug)+".md"))
 }
 
+// Concepts returns the tags a stage's note declares in its frontmatter, or
+// nil when the note is missing or untagged. The tags are what the concept
+// index and the TUI's filter search across, so a reader can find every stage
+// that drills, say, binary parsing.
+func Concepts(root, course string, index int, slug string) []string {
+	data, err := os.ReadFile(filepath.Join(root, Dir, course, StageDir(index, slug)+".md"))
+	if err != nil {
+		return nil
+	}
+	return parseConcepts(string(data))
+}
+
+// parseConcepts reads the `concepts: [a, b]` line out of a YAML frontmatter
+// block. A hand-rolled reader rather than a YAML dependency: the field is a
+// flat list of short strings and nothing else in the frontmatter is read.
+func parseConcepts(doc string) []string {
+	if !strings.HasPrefix(doc, "---\n") {
+		return nil
+	}
+	end := strings.Index(doc[4:], "\n---")
+	if end < 0 {
+		return nil
+	}
+	for _, line := range strings.Split(doc[4:4+end], "\n") {
+		rest, ok := strings.CutPrefix(line, "concepts:")
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSpace(rest)
+		rest = strings.TrimPrefix(rest, "[")
+		rest = strings.TrimSuffix(rest, "]")
+		var out []string
+		for _, tag := range strings.Split(rest, ",") {
+			if tag = strings.TrimSpace(tag); tag != "" {
+				out = append(out, tag)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 func read(path string) (string, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
