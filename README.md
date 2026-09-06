@@ -126,14 +126,17 @@ authored in-repo under `reference-solutions/`:
   request/response framing, ApiVersions, DescribeTopicPartitions, Fetch, and
   Produce, including parsing the `__cluster_metadata` log's record-batch
   format and reading/writing partition log segments on disk)
-- **bittorrent**: in progress (stages 1-9 verified; stage 10+ blocked by
-  this environment's network egress policy)
+- **bittorrent**: all 19 stages ✓ (bencode, torrent parsing and info
+  hashing, tracker announce, the peer wire protocol with pipelined block
+  requests and pieces spread over every peer, plus magnet links — the BEP 10
+  extension handshake and BEP 9 metadata exchange)
 
 Each `reference-solutions/<course>/NN-slug/main.go` was verified by running the
 official CodeCrafters tester cumulatively (stages 1..N) against it. The
 authoring sources live in `reference-solutions/<course>-work/`, and
-`reference-solutions/verify.sh` / `snapshot.sh` (or the `-local.sh` variants, which use
-this checkout's own paths instead of a hardcoded author path) reproduce the verification.
+`reference-solutions/verify.sh` / `snapshot.sh` (or the `-local.sh` variants, which
+default the working directory to this checkout's own `<course>-work`) reproduce the
+verification, reading the stage lists in `reference-solutions/stages/`.
 `byox` reads these first, falling back to CodeCrafters' vendored free-stage
 solutions.
 

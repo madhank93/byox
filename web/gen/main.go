@@ -39,9 +39,7 @@ var courseColors = []string{
 // can't derive from the tester-verified snapshot count alone: why a
 // course isn't (yet) fully verified. Absent entries just show
 // "N/M stages verified".
-var courseNotes = map[string]string{
-	"bittorrent": "Stages 1-9 are tester-verified. Stage 10 onward need the real bittorrent-test-tracker.codecrafters.io and live seeded peers, not a local mock — blocked in the sandboxed environment these solutions were authored in. See the repo's PR #6 for the full writeup.",
-}
+var courseNotes = map[string]string{}
 
 type stageEntry struct {
 	Course      string

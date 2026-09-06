@@ -1,0 +1,19 @@
+01	ns2	Decode bencoded strings
+02	eb4	Decode bencoded integers
+03	ah1	Decode bencoded lists
+04	mn6	Decode bencoded dictionaries
+05	ow9	Parse torrent file
+06	rb2	Calculate info hash
+07	bf7	Piece hashes
+08	fi9	Discover peers
+09	ca4	Peer handshake
+10	nd2	Download a piece
+11	jv8	Download the whole file
+12	hw0	Parse magnet link
+13	pk2	Announce extension support
+14	xi4	Send extension handshake
+15	jk6	Receive extension handshake
+16	ns5	Request metadata
+17	zh1	Receive metadata
+18	qv6	Download a piece
+19	dv7	Download the whole file

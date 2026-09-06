@@ -1,0 +1,115 @@
+01	jm1	Bind to a port
+02	rg2	Respond to PING
+03	wy1	Respond to multiple PINGs
+04	zu2	Handle concurrent clients
+05	qq0	Implement the ECHO command
+06	la7	Implement the SET & GET commands
+07	yz1	Expiry
+08	zg5	RDB file config
+09	jz6	Read a key
+10	gc6	Read a string value
+11	jw4	Read multiple keys
+12	dq3	Read multiple string values
+13	sm4	Read value with expiry
+14	uj3	Default AOF options
+15	vd9	AOF options from flags
+16	fm0	Create append-only directory
+17	dw4	Create append-only file
+18	pb9	Create manifest file
+19	dc8	Write a single command
+20	fi1	Write multiple commands
+21	ep6	Filter write commands
+22	xz2	Replay a single command
+23	kn2	Replay multiple commands
+24	bw1	Configure listening port
+25	ye5	The INFO command
+26	hc6	The INFO command on a replica
+27	xc1	Initial replication ID and offset
+28	gl7	Send handshake (1/3)
+29	eh4	Send handshake (2/3)
+30	ju6	Send handshake (3/3)
+31	fj0	Receive handshake (1/2)
+32	vm3	Receive handshake (2/2)
+33	cf8	Empty RDB transfer
+34	zn8	Single-replica propagation
+35	hd5	Multi-replica propagation
+36	yg4	Command processing
+37	xv6	ACKs with no commands
+38	yd3	ACKs with commands
+39	my8	WAIT with no replicas
+40	tu8	WAIT with no commands
+41	na2	WAIT with multiple commands
+42	cc3	The TYPE command
+43	cf6	Create a stream
+44	hq8	Validating entry IDs
+45	yh3	Partially auto-generated IDs
+46	xu6	Fully auto-generated IDs
+47	zx1	Query entries from stream
+48	yp1	Query with -
+49	fs1	Query with +
+50	um0	Query single stream using XREAD
+51	ru9	Query multiple streams using XREAD
+52	bs1	Blocking reads
+53	hw1	Blocking reads without timeout
+54	xu1	Blocking reads using $
+55	si4	The INCR command (1/3)
+56	lz8	The INCR command (2/3)
+57	mk1	The INCR command (3/3)
+58	pn0	The MULTI command
+59	lo4	The EXEC command
+60	we1	Empty transaction
+61	rs9	Queueing commands
+62	fy6	Executing a transaction
+63	rl9	The DISCARD command
+64	sg9	Failures within transactions
+65	jf8	Multiple transactions
+66	jb7	The WATCH command
+67	jq9	WATCH inside transaction
+68	mh8	Tracking key modifications
+69	fp0	Watching multiple keys
+70	uo9	Watching missing keys
+71	bn1	The UNWATCH command
+72	fn4	Unwatch on EXEC
+73	hq1	Unwatch on DISCARD
+74	mh6	Create a list
+75	tn7	Append an element
+76	lx4	Append multiple elements
+77	sf6	List elements (positive indexes)
+78	ri1	List elements (negative indexes)
+79	gu5	Prepend elements
+80	fv6	Query list length
+81	ef1	Remove an element
+82	jp1	Remove multiple elements
+83	ec3	Blocking retrieval
+84	xj7	Blocking retrieval with timeout
+85	mx3	Subscribe to a channel
+86	zc8	Subscribe to multiple channels
+87	aw8	Enter subscribed mode
+88	lf1	PING in subscribed mode
+89	hf2	Publish a message
+90	dn4	Deliver messages
+91	ze9	Unsubscribe
+92	ct1	Create a sorted set
+93	hf1	Add members
+94	lg6	Retrieve member rank
+95	ic1	List sorted set members
+96	bj4	ZRANGE with negative indexes
+97	kn4	Count sorted set members
+98	gd7	Retrieve member score
+99	sq7	Remove a member
+100	zt4	Respond to GEOADD
+101	ck3	Validate coordinates
+102	tn5	Store a location
+103	cr3	Calculate location score
+104	xg4	Respond to GEOPOS
+105	hb5	Decode coordinates
+106	ek6	Calculate distance
+107	rm9	Search within radius
+108	jn4	Respond to ACL WHOAMI
+109	gx8	Respond to ACL GETUSER
+110	ql6	The nopass flag
+111	pl7	The passwords property
+112	uv9	Setting default user password
+113	hz3	The AUTH command
+114	nm2	Enforce authentication
+115	ws7	Authenticate using AUTH

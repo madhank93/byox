@@ -1,0 +1,33 @@
+01	cq2	Match a literal character
+02	oq2	Match digits
+03	mr9	Match word characters
+04	tl6	Positive Character Groups
+05	rk3	Negative Character Groups
+06	sh9	Combining Character Classes
+07	rr8	Start of string anchor
+08	ao7	End of string anchor
+09	fz7	Match one or more times
+10	ny8	Match zero or one times
+11	zb3	Wildcard
+12	zm7	Alternation
+13	sb5	Single Backreference
+14	tg1	Multiple Backreferences
+15	xe5	Nested Backreferences
+16	dr5	Search a single-line file
+17	ol9	Search a multi-line file
+18	is6	Search multiple files
+19	yx6	Recursive search
+20	ai9	Match zero or more times
+21	wy9	Match exactly n times
+22	hk3	Match at least n times
+23	ug0	Match between n and m times
+24	ku5	Print a single matching line
+25	pz6	Print multiple matching lines
+26	cj0	Print single match
+27	ss2	Print multiple matches
+28	bo4	Process multiple input lines
+29	bm2	Highlight a single match
+30	eq0	Highlight multiple matches
+31	wg2	Highlight matches in multiple lines
+32	jk4	Disable highlighting
+33	na5	Implement the auto color option

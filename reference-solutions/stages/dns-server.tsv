@@ -1,0 +1,8 @@
+01	ux2	Setup UDP server
+02	tz1	Write header section
+03	bf2	Write question section
+04	xm2	Write answer section
+05	uc8	Parse header section
+06	hd8	Parse question section
+07	yc9	Parse compressed packet
+08	gt1	Forwarding Server
