@@ -1,0 +1,7 @@
+01	gg4	Initialize the .git directory
+02	ic4	Read a blob object
+03	jt4	Create a blob object
+04	kp1	Read a tree object
+05	fe4	Write a tree object
+06	jm9	Create a commit
+07	mg6	Clone a repository

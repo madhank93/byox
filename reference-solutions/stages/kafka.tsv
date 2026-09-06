@@ -1,0 +1,25 @@
+01	vi6	Bind to a port
+02	nv3	Send Correlation ID
+03	wa6	Parse Correlation ID
+04	nc5	Parse API Version
+05	pv1	Handle ApiVersions requests
+06	nh4	Serial requests
+07	sk0	Concurrent requests
+08	yk1	Include DescribeTopicPartitions in ApiVersions
+09	vt6	List for an unknown topic
+10	ea7	List for a single partition
+11	ku4	List for multiple partitions
+12	wq2	List for multiple topics
+13	gs0	Include Fetch in ApiVersions
+14	dh6	Fetch with no topics
+15	hn6	Fetch with an unknown topic
+16	cm4	Fetch with an empty topic
+17	eg2	Fetch single message from disk
+18	fd8	Fetch multiple messages from disk
+19	xz1	Include Produce in ApiVersions
+20	zf2	Respond for invalid topic or partition
+21	gg1	Respond for valid topic and partition
+22	ls8	Produce a single record
+23	yd8	Produce multiple records
+24	ct4	Produce to multiple partitions
+25	ov0	Produce to multiple partitions of multiple topics

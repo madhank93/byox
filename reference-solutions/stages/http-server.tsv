@@ -1,0 +1,14 @@
+01	at4	Bind to a port
+02	ia4	Respond with 200
+03	ih0	Extract URL path
+04	cn2	Respond with body
+05	fs3	Read header
+06	ej5	Concurrent connections
+07	ap6	Return a file
+08	qv8	Read request body
+09	df4	Compression headers
+10	ij8	Multiple compression schemes
+11	cr8	Gzip compression
+12	ag9	Persistent connections
+13	ul1	Concurrent persistent connections
+14	kh7	Connection closure

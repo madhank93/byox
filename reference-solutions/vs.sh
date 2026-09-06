@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # vs.sh <course> <from> <to>  — verify cumulative 1..to, snapshot from..to if all pass
 course="$1"; from="$2"; to="$3"
-root="/Volumes/work/git-repos/build-your-own-x"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$root/reference-solutions/${course}-work"
 if ! ( cd "$work" && go build -o /tmp/vs_bin ./app ); then
   echo "BUILD FAILED"; exit 1

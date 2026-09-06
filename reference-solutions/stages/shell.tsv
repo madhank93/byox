@@ -1,0 +1,76 @@
+01	oo8	Print a prompt
+02	cz2	Handle invalid commands
+03	ff0	Implement a REPL
+04	pn5	Implement exit
+05	iz3	Implement echo
+06	ez5	Implement type
+07	mg5	Locate executable files
+08	ip1	Run a program
+09	ei0	The pwd builtin
+10	ra6	The cd builtin: Absolute paths
+11	gq9	The cd builtin: Relative paths
+12	gp4	The cd builtin: Home directory
+13	ni6	Single quotes
+14	tg6	Double quotes
+15	yt5	Backslash outside quotes
+16	le5	Backslash within single quotes
+17	gu3	Backslash within double quotes
+18	qj0	Executing a quoted executable
+19	jv1	Redirect stdout
+20	vz4	Redirect stderr
+21	el9	Append stdout
+22	un3	Append stderr
+23	qp2	Builtin completion
+24	gm9	Completion with arguments
+25	qm8	Missing completions
+26	gy5	Executable completion
+27	wh6	Multiple completions
+28	wt6	Partial completions
+29	zv2	File completion
+30	ue6	Nested file completion
+31	lc6	Directory completion
+32	vs5	Missing completions
+33	no5	Multiple matches
+34	jp8	Partial completions
+35	bf8	Multi-argument completions
+36	ne7	Register complete builtin
+37	oi7	Printing missing specifications
+38	wl6	Displaying registered specifications
+39	pm5	Single completion
+40	qf1	Handling no completions
+41	zi0	Passing command-line arguments
+42	nr7	Passing environment variables
+43	ep2	Multiple completer candidates
+44	xz3	Longest common prefix
+45	tz2	Unregister a completion
+46	af3	The jobs builtin
+47	at7	Starting background jobs
+48	si2	Printing background job output
+49	jd6	List a single job
+50	dk5	List multiple jobs
+51	ma9	Reap one job
+52	rq2	Reap multiple jobs
+53	bv8	Reap before the next prompt
+54	fy4	Recycle job numbers
+55	br6	Dual-command pipeline
+56	ny9	Pipelines with built-ins
+57	xk3	Multi-command pipelines
+58	bq4	The history builtin
+59	yf5	Listing history
+60	ag6	Limiting history entries
+61	rh7	Up-arrow navigation
+62	vq0	Down-arrow navigation
+63	dm2	Executing commands from history
+64	za2	Read history from file
+65	in3	Write history to file
+66	sx3	Append history to file
+67	zp4	Read history on startup
+68	kz7	Write history on exit
+69	jv2	Append history on exit
+70	ji0	The declare builtin
+71	oa2	Printing missing variables
+72	kv5	Storing shell variables
+73	db8	Validating variable names
+74	ge9	Expanding variables
+75	br2	Expansion with braces
+76	my0	Expanding empty variables

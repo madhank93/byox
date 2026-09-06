@@ -1,0 +1,9 @@
+01	dr6	Print page size
+02	ce0	Print number of tables
+03	sz4	Print table names
+04	nd9	Count rows in a table
+05	az9	Read data from a single column
+06	vc9	Read data from multiple columns
+07	rf3	Filter data with a WHERE clause
+08	ws9	Retrieve data using a full-table scan
+09	nz8	Retrieve data using an index

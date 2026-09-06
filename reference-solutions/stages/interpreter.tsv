@@ -1,0 +1,84 @@
+01	ry8	Scanning: Empty file
+02	ol4	Scanning: Parentheses
+03	oe8	Scanning: Braces
+04	xc5	Scanning: Other single-character tokens
+05	ea6	Scanning: Lexical errors
+06	mp7	Scanning: Assignment & equality Operators
+07	bu3	Scanning: Negation & inequality operators
+08	et2	Scanning: Relational operators
+09	ml2	Scanning: Division operator & comments
+10	er2	Scanning: Whitespace
+11	tz7	Scanning: Multi-line errors
+12	ue7	Scanning: String literals
+13	kj0	Scanning: Number literals
+14	ey7	Scanning: Identifiers
+15	pq5	Scanning: Reserved words
+16	sc2	Booleans & Nil
+17	ra8	Number literals
+18	th5	String literals
+19	xe6	Parentheses
+20	mq1	Unary Operators
+21	wa9	Arithmetic operators (1/2)
+22	yf2	Arithmetic operators (2/2)
+23	uh4	Comparison operators
+24	ht8	Equality operators
+25	wz8	Syntactic errors
+26	iz6	Literals: Booleans & Nil
+27	lv1	Literals: Strings & Numbers
+28	oq9	Parentheses
+29	dc1	Unary Operators: Negation & Not
+30	bp3	Arithmetic Operators (1/2)
+31	jy2	Arithmetic Operators (2/2)
+32	jx8	String Concatenation
+33	et4	Relational Operators
+34	hw7	Equality Operators
+35	gj9	Runtime Errors: Unary Operators
+36	yu6	Runtime Errors: Binary Operators (1/2)
+37	cq1	Runtime Errors: Binary Operators (2/2)
+38	ib5	Runtime Errors: Relational Operators
+39	xy1	Print: Generate output
+40	oe4	Print: Multiple statements
+41	fi3	Expression statements
+42	yg2	Variables: Declare variables
+43	sv7	Variables: Runtime Errors
+44	bc1	Variables: Initialize variables
+45	dw9	Variables: Redeclare variables
+46	pl3	Assignment operation
+47	vr5	Block syntax
+48	fb4	Scopes
+49	ne3	If statements
+50	st5	Else statements
+51	fh8	Else-if statements
+52	xj4	Nested if statements
+53	wk8	Logical OR operator
+54	jx4	Logical AND operator
+55	qy3	While statements
+56	bw6	For statements
+57	vt1	Syntactic errors
+58	av4	Native functions
+59	pg8	Functions without arguments
+60	lb6	Functions with arguments
+61	px4	Syntax errors
+62	rd2	Return statements
+63	ey3	Higher order functions
+64	fj7	Runtime errors
+65	bz4	Function scope
+66	gg6	Closures
+67	de8	Identifier Resolution
+68	pt7	Self Initialization
+69	pz7	Variable Redeclaration
+70	eh3	Invalid Return
+71	vf4	Class Declarations
+72	yk8	Class Instances
+73	yf3	Getters & Setters
+74	qr2	Instance Methods
+75	yd7	The 'this' keyword
+76	dg2	Invalid usages of 'this'
+77	ou5	Constructor calls
+78	eb9	Return within constructors
+79	mf6	Class Hierarchy
+80	ky1	Inheriting Methods
+81	ka5	Overriding Methods
+82	ab0	Inheritance errors
+83	qi0	The super keyword
+84	ib9	Invalid Usages of the super Keyword
