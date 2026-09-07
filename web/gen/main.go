@@ -291,7 +291,7 @@ func primerLede(root, course string) string {
 	if !ok {
 		return ""
 	}
-	return plainText(firstParagraph(body))
+	return firstSentence(plainText(firstParagraph(body)))
 }
 
 // plainText strips the light markdown CodeCrafters descriptions use
@@ -308,6 +308,34 @@ func plainText(s string) string {
 
 // firstParagraph returns the first non-empty, non-heading paragraph of a
 // stage description — the one-sentence summary shown in the catalog row.
+// firstSentence trims a paragraph to its opening sentence.
+//
+// The catalog gives this one line in a table row: a whole paragraph overflows
+// it, and the rest of the primer is one click away regardless.
+func firstSentence(s string) string {
+	for i, r := range s {
+		if r != '.' && r != '!' && r != '?' {
+			continue
+		}
+		rest := s[i+len(string(r)):]
+		// A full stop inside "e.g." or a version number does not end a
+		// sentence; one followed by a space and a capital does.
+		if rest == "" {
+			return s
+		}
+		if strings.HasPrefix(rest, " ") {
+			trimmed := strings.TrimLeft(rest, " ")
+			if trimmed == "" {
+				return s[:i+1]
+			}
+			if next := []rune(trimmed)[0]; next >= 'A' && next <= 'Z' {
+				return s[:i+1]
+			}
+		}
+	}
+	return s
+}
+
 func firstParagraph(md string) string {
 	for _, para := range strings.Split(md, "\n\n") {
 		para = strings.TrimSpace(para)
