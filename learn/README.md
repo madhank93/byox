@@ -27,12 +27,12 @@ title: Read a tree object
 concepts: [binary parsing, zlib, sha-1]
 ---
 
-## What this stage teaches
+## Core concept
 
 Two to four sentences on the idea, not the instructions. The reader already
 has the task; what they lack is the model.
 
-## Go you'll reach for
+## Go APIs
 
 - `compress/zlib` — object files are zlib streams, not raw bytes.
 - `bytes.IndexByte` — entries are NUL-delimited, so scan, don't split.
@@ -41,9 +41,9 @@ has the task; what they lack is the model.
 
 <details><summary>Nudge</summary>...</details>
 <details><summary>Approach</summary>...</details>
-<details><summary>The API</summary>...</details>
+<details><summary>Implementation</summary>...</details>
 
-## Going deeper
+## Further reading
 
 - [Git internals — tree objects](https://git-scm.com/book/en/v2/...)
 ```
@@ -56,8 +56,8 @@ has the task; what they lack is the model.
 2. **Concept over instruction.** If a sentence would still be true with the
    tester deleted, it belongs here. If it starts "the tester will…", it does not.
 3. **Hints ladder, never the answer.** Scale it to the stage: a hard stage
-   gets all three steps — a nudge at the idea, an approach, then the specific
-   API — while an easy one is often done after the nudge. Padding a one-line
+   gets all three rungs — a nudge at the idea, an approach, then the
+   implementation — while an easy one is often done after the nudge. Padding a one-line
    stage out to three hints just buries the useful one. The worked solution
    already lives in `reference-solutions/` behind a spoiler; don't duplicate
    it here.

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const note = `## What this stage teaches
+const note = `## Core concept
 
 The idea.
 
@@ -16,7 +16,7 @@ The idea.
 Try the small thing.
 </details>
 
-## Going deeper
+## Further reading
 
 - [a link](https://example.com)
 `
@@ -24,7 +24,7 @@ Try the small thing.
 func TestSplitHints(t *testing.T) {
 	body, hints := SplitHints(note)
 
-	for _, want := range []string{"## What this stage teaches", "## Going deeper"} {
+	for _, want := range []string{"## Core concept", "## Further reading"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body lost %q:\n%s", want, body)
 		}
@@ -41,7 +41,7 @@ func TestSplitHints(t *testing.T) {
 }
 
 func TestSplitHintsWithoutHints(t *testing.T) {
-	in := "## What this stage teaches\n\nJust prose.\n"
+	in := "## Core concept\n\nJust prose.\n"
 	body, hints := SplitHints(in)
 	if body != in || hints != "" {
 		t.Errorf("SplitHints(no hints) = %q, %q", body, hints)

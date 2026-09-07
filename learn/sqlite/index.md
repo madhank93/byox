@@ -71,7 +71,7 @@ tree — which is the payoff for keeping the record reader generic.
 Read the header → count tables → count rows → read a column → read multiple
 columns → filter with `WHERE` → full table scan with a filter → use an index.
 
-## Going deeper
+## Further reading
 
 - [SQLite database file format](https://www.sqlite.org/fileformat.html)
 - [Record format §2.1](https://www.sqlite.org/fileformat.html#record_format)

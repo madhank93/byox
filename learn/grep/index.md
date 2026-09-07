@@ -69,7 +69,7 @@ Literal → digits → alphanumerics → character groups → combining patterns
 anchors → quantifiers → wildcard → alternation → single backreference →
 multiple backreferences → nested backreferences.
 
-## Going deeper
+## Further reading
 
 - [Rob Pike's regex matcher, explained by Brian Kernighan](https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html)
 - [Russ Cox — Regular expression matching can be simple and fast](https://swtch.com/~rsc/regexp/regexp1.html)

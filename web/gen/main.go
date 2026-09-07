@@ -437,7 +437,7 @@ func writePrimers(root string, courses []courseInfo) error {
 		var b strings.Builder
 		fmt.Fprintf(&b, "---\ntitle: %s\ndescription: %s\n---\n\n",
 			js(c.Name+" — primer"),
-			js("The domain background behind "+c.Name+": what the protocol or format actually is, and the Go you reach for."))
+			js("The domain background behind "+c.Name+": what the protocol or format actually is, and the Go APIs it needs."))
 		b.WriteString(body)
 		b.WriteString("\n")
 		if err := os.WriteFile(filepath.Join(dir, c.Slug+".md"), []byte(b.String()), 0o644); err != nil {

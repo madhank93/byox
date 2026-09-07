@@ -65,7 +65,7 @@ Correlation id → error codes → `ApiVersions` → `DescribeTopicPartitions`
 Twenty-five stages, of which the parser you build in the first ten does most of
 the work in the last fifteen.
 
-## Going deeper
+## Further reading
 
 - [Kafka protocol guide](https://kafka.apache.org/protocol.html)
 - [Record batch format](https://kafka.apache.org/documentation/#recordbatch)

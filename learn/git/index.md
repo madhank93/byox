@@ -66,7 +66,7 @@ a single pass fails on real repositories.
 `commit-tree` → `clone`. The first six are one file format each; the last is
 half the difficulty of the course.
 
-## Going deeper
+## Further reading
 
 - [Pro Git — Git internals: objects](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects)
 - [Git docs — pack format](https://git-scm.com/docs/pack-format)

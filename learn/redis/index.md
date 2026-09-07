@@ -75,7 +75,7 @@ lists → pub/sub → sorted sets → geospatial → ACL. Each block adds a data
 plus one new coordination problem; the protocol layer stops changing after the
 first few stages.
 
-## Going deeper
+## Further reading
 
 - [RESP protocol spec](https://redis.io/docs/latest/develop/reference/protocol-spec/)
 - [Redis replication](https://redis.io/docs/latest/operate/oss_and_stack/management/replication/)
