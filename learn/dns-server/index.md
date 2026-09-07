@@ -72,7 +72,7 @@ tester. Bugs that were symmetric until now suddenly show.
 UDP listener → write a header → write a question → write an answer → parse a
 header → parse questions → resolve compressed names → forward to an upstream.
 
-## Going deeper
+## Further reading
 
 - [RFC 1035 §4 — message format](https://www.rfc-editor.org/rfc/rfc1035#section-4)
 - [RFC 1035 §4.1.4 — message compression](https://www.rfc-editor.org/rfc/rfc1035#section-4.1.4)

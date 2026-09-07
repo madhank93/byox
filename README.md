@@ -78,7 +78,7 @@ from anywhere.
 ```
 learn/<course>/index.md      course primer — the protocol or file format itself,
                              the Go packages that carry it, the traps
-learn/<course>/NN-slug.md    per-stage note — the concept, the APIs to reach for,
+learn/<course>/NN-slug.md    per-stage note — the core concept, the Go APIs,
                              a three-step hint ladder, primary sources
 ```
 

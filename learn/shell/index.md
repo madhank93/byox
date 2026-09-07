@@ -65,7 +65,7 @@ REPL → invalid commands → builtins (`exit`, `echo`, `type`) → `PATH` looku
 `cd` → quoting → redirection → completion (builtin, then executables, then
 programmable) → pipelines → history → history files → shell variables.
 
-## Going deeper
+## Further reading
 
 - [POSIX shell command language](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html)
 - [`os/exec` package docs](https://pkg.go.dev/os/exec)

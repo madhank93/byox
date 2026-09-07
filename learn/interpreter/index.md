@@ -78,7 +78,7 @@ Scanning (tokens, strings, numbers, identifiers, keywords) → parsing
 state → control flow → functions and closures → resolving → classes →
 inheritance.
 
-## Going deeper
+## Further reading
 
 - [*Crafting Interpreters* — the book this course follows](https://craftinginterpreters.com/)
 - [Resolving and binding](https://craftinginterpreters.com/resolving-and-binding.html)

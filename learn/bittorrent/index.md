@@ -70,7 +70,7 @@ Bencode decode → parse the torrent → info hash → piece hashes → tracker 
 handshake → download a piece → download the file → magnet parsing → metadata
 exchange → download from a magnet link.
 
-## Going deeper
+## Further reading
 
 - [BitTorrent protocol specification (BEP 3)](https://www.bittorrent.org/beps/bep_0003.html)
 - [BEP 9 — extension for peers to send metadata files](https://www.bittorrent.org/beps/bep_0009.html)

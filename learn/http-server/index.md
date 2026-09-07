@@ -70,7 +70,7 @@ Bind a port → parse a request line → respond with status codes → echo path
 segments → read a header → concurrency → serve and accept files → persistent
 connections → gzip. Fourteen stages, and roughly half of them are framing.
 
-## Going deeper
+## Further reading
 
 - [RFC 9112 — HTTP/1.1 message syntax](https://www.rfc-editor.org/rfc/rfc9112)
 - [MDN: HTTP messages](https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages)
