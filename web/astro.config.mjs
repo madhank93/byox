@@ -49,7 +49,6 @@ export default defineConfig({
 			sidebar: [
 				{ label: 'Getting started', slug: 'getting-started' },
 				{ label: 'Catalog', link: '/catalog/' },
-				{ label: 'Learn', items: [{ autogenerate: { directory: 'learn' } }] },
 			],
 		}),
 	],
