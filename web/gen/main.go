@@ -54,6 +54,7 @@ type stageEntry struct {
 	PrevPath    string // repo-relative path to the nearest earlier stage's snapshot, if any
 	OriginStage int    // stage number where this snapshot's content was first introduced
 	GroupEnd    int    // last stage sharing this snapshot; > Index means the file covers a run of stages
+	Concepts    []string
 }
 
 type courseInfo struct {
@@ -89,6 +90,15 @@ func run() error {
 	if err := os.RemoveAll(filepath.Join(root, detailsDir)); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Join(root, detailsDir), 0o755); err != nil {
+		return err
+	}
+	// The primer and the stage notes both reach the reader through the
+	// catalog now, so nothing is published under /learn/ — clear whatever an
+	// earlier build left there.
+	if err := os.RemoveAll(filepath.Join(root, primersDir)); err != nil {
+		return err
+	}
 
 	var stages []stageEntry
 	var courses []courseInfo
@@ -117,7 +127,10 @@ func run() error {
 			Name:  c.Name,
 			Repo:  c.Repo,
 			Color: courseColors[i%len(courseColors)],
-			Learn: plainText(def.DescriptionMD),
+			// byox's own primer opening, not CodeCrafters' course blurb:
+			// their prose is paid and unredistributable (learn/README.md #1),
+			// and this line is published on the catalog's primer row.
+			Learn: primerLede(root, c.Slug),
 			Total: len(def.Stages),
 			Note:  courseNotes[c.Slug],
 		}
@@ -134,6 +147,7 @@ func run() error {
 				Difficulty:  s.Difficulty,
 				Description: plainText(firstParagraph(def.StageDescription(vendorDir, s))),
 				Verified:    ok,
+				Concepts:    learn.Concepts(root, c.Slug, n, s.Slug),
 			}
 			if ok {
 				ci.Verified++
@@ -161,9 +175,6 @@ func run() error {
 	}
 
 	if err := writePrimers(root, courses); err != nil {
-		return err
-	}
-	if err := writeConceptIndex(root, courses, stages); err != nil {
 		return err
 	}
 	return writeCatalog(root, courses, stages)
@@ -270,7 +281,18 @@ var (
 	mdCode    = regexp.MustCompile("`([^`]+)`")
 	mdHeading = regexp.MustCompile(`(?m)^#{1,6}\s+`)
 	mdBold    = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	mdItalic  = regexp.MustCompile(`\*([^*]+)\*`)
 )
+
+// primerLede is the first paragraph of a course's primer, as one line — the
+// blurb the catalog's primer row shows before the reader opens it.
+func primerLede(root, course string) string {
+	body, ok := learn.Primer(root, course)
+	if !ok {
+		return ""
+	}
+	return plainText(firstParagraph(body))
+}
 
 // plainText strips the light markdown CodeCrafters descriptions use
 // (headings, links, code spans, bold) down to prose, for the catalog
@@ -280,6 +302,7 @@ func plainText(s string) string {
 	s = mdLink.ReplaceAllString(s, "$1")
 	s = mdCode.ReplaceAllString(s, "$1")
 	s = mdBold.ReplaceAllString(s, "$1")
+	s = mdItalic.ReplaceAllString(s, "$1")
 	return strings.TrimSpace(strings.Join(strings.Fields(s), " "))
 }
 
@@ -366,81 +389,23 @@ func writeDetail(root string, e stageEntry, fullDescription string) error {
 	return os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644)
 }
 
-// writeConceptIndex emits a page grouping every stage by the concepts its
-// note declares, so a reader can approach the catalog by idea — "show me
-// everything that drills binary parsing" — rather than by course. The tags
-// come from the notes' own frontmatter, which is otherwise unread.
-func writeConceptIndex(root string, courses []courseInfo, stages []stageEntry) error {
-	type ref struct {
-		course, courseName, slug, title string
-		index                           int
-	}
-	byConcept := map[string][]ref{}
-	for _, e := range stages {
-		for _, tag := range learn.Concepts(root, e.Course, e.Index, e.Slug) {
-			byConcept[tag] = append(byConcept[tag], ref{e.Course, e.CourseName, e.Slug, e.Title, e.Index})
-		}
-	}
-	if len(byConcept) == 0 {
-		return nil
-	}
-
-	tags := make([]string, 0, len(byConcept))
-	for tag := range byConcept {
-		tags = append(tags, tag)
-	}
-	// Most-covered concepts first: the ones worth reading as a thread.
-	sort.Slice(tags, func(i, j int) bool {
-		if n, m := len(byConcept[tags[i]]), len(byConcept[tags[j]]); n != m {
-			return n > m
-		}
-		return tags[i] < tags[j]
-	})
-
-	var b strings.Builder
-	b.WriteString("---\ntitle: \"Concepts\"\ndescription: \"Every stage grouped by the idea it teaches, so the catalog can be read by concept rather than by course.\"\n---\n\n")
-	fmt.Fprintf(&b, "%d concepts across %d stages. Each stage's note declares what it teaches; this page inverts that.\n\n", len(tags), len(stages))
-	for _, tag := range tags {
-		refs := byConcept[tag]
-		sort.Slice(refs, func(i, j int) bool {
-			if refs[i].course != refs[j].course {
-				return refs[i].course < refs[j].course
-			}
-			return refs[i].index < refs[j].index
-		})
-		fmt.Fprintf(&b, "## %s\n\n", tag)
-		for _, r := range refs {
-			fmt.Fprintf(&b, "- **%s** stage %d — [%s](/catalog/?stage=%s-%s)\n", r.courseName, r.index, r.title, r.course, r.slug)
-		}
-		b.WriteString("\n")
-	}
-	return os.WriteFile(filepath.Join(root, primersDir, "concepts.md"), []byte(b.String()), 0o644)
-}
-
-// writePrimers turns each course's learn/<course>/index.md into a Starlight
-// page under /learn/. The primers are byox's own prose, so unlike the
-// vendored stage instructions they can be published as pages rather than
-// only shown behind a click.
+// writePrimers renders each course's learn/<course>/index.md as a detail
+// file, so the catalog's primer row can fetch it through the same endpoint
+// the stages use. The primer is byox's own prose, unlike the vendored stage
+// instructions, but it is still read where a course is chosen — in the
+// catalog — rather than from a page nobody navigates to first.
 func writePrimers(root string, courses []courseInfo) error {
-	dir := filepath.Join(root, primersDir)
-	if err := os.RemoveAll(dir); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	for _, c := range courses {
 		body, ok := learn.Primer(root, c.Slug)
 		if !ok {
 			continue
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "---\ntitle: %s\ndescription: %s\n---\n\n",
-			js(c.Name+" — primer"),
-			js("The domain background behind "+c.Name+": what the protocol or format actually is, and the Go APIs it needs."))
+		fmt.Fprintf(&b, "---\ntitle: %s\n---\n\n", js(c.Name+" — primer"))
 		b.WriteString(body)
 		b.WriteString("\n")
-		if err := os.WriteFile(filepath.Join(dir, c.Slug+".md"), []byte(b.String()), 0o644); err != nil {
+		name := c.Slug + "-primer.md"
+		if err := os.WriteFile(filepath.Join(root, detailsDir, name), []byte(b.String()), 0o644); err != nil {
 			return err
 		}
 	}
@@ -455,19 +420,20 @@ func writeCatalog(root string, courses []courseInfo, stages []stageEntry) error 
 	b.WriteString("// AUTO-GENERATED by `go run ./web/gen` from courses.yml — do not hand-edit.\n\n")
 	b.WriteString("export type CatalogEntry = {\n")
 	b.WriteString("  course: string;\n  index: number;\n  slug: string;\n  title: string;\n")
-	b.WriteString("  difficulty: string;\n  description: string;\n  verified: boolean;\n  sourcePath: string;\n};\n\n")
+	b.WriteString("  difficulty: string;\n  description: string;\n  verified: boolean;\n  sourcePath: string;\n  concepts: string[];\n};\n\n")
 
-	b.WriteString("export const COURSES: Record<string, { name: string; repo: string; color: string; learn: string; total: number; verified: number; note: string }> = {\n")
+	b.WriteString("export const COURSES: Record<string, { name: string; repo: string; color: string; learn: string; total: number; verified: number; note: string; primer: boolean }> = {\n")
 	for _, c := range courses {
-		fmt.Fprintf(&b, "  %s: { name: %s, repo: %s, color: %s, learn: %s, total: %d, verified: %d, note: %s },\n",
-			js(c.Slug), js(c.Name), js(c.Repo), js(c.Color), js(c.Learn), c.Total, c.Verified, js(c.Note))
+		_, hasPrimer := learn.Primer(root, c.Slug)
+		fmt.Fprintf(&b, "  %s: { name: %s, repo: %s, color: %s, learn: %s, total: %d, verified: %d, note: %s, primer: %s },\n",
+			js(c.Slug), js(c.Name), js(c.Repo), js(c.Color), js(c.Learn), c.Total, c.Verified, js(c.Note), boolLit(hasPrimer))
 	}
 	b.WriteString("};\n\n")
 
 	b.WriteString("export const CATALOG: CatalogEntry[] = [\n")
 	for _, e := range stages {
-		fmt.Fprintf(&b, "  { course: %s, index: %d, slug: %s, title: %s, difficulty: %s, description: %s, verified: %s, sourcePath: %s },\n",
-			js(e.Course), e.Index, js(e.Slug), js(e.Title), js(e.Difficulty), js(e.Description), boolLit(e.Verified), js(e.SourcePath))
+		fmt.Fprintf(&b, "  { course: %s, index: %d, slug: %s, title: %s, difficulty: %s, description: %s, verified: %s, sourcePath: %s, concepts: %s },\n",
+			js(e.Course), e.Index, js(e.Slug), js(e.Title), js(e.Difficulty), js(e.Description), boolLit(e.Verified), js(e.SourcePath), jsList(e.Concepts))
 	}
 	b.WriteString("];\n")
 
@@ -501,6 +467,19 @@ func writeCatalog(root string, courses []courseInfo, stages []stageEntry) error 
 	}
 	fmt.Fprintf(os.Stderr, "gen: learn coverage: %d/%d primers, %d/%d stage notes\n", primers, len(courses), notes, total)
 	return nil
+}
+
+// jsList renders a tag list as a TS array literal, empty rather than null so
+// the page can iterate it without a guard.
+func jsList(v []string) string {
+	if len(v) == 0 {
+		return "[]"
+	}
+	parts := make([]string, len(v))
+	for i, s := range v {
+		parts[i] = js(s)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 func js(s string) string {

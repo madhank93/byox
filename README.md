@@ -85,9 +85,9 @@ learn/<course>/NN-slug.md    per-stage note — the core concept, the Go APIs,
 Press `n` in the TUI: a stage row shows that stage's note, a course header row
 shows the primer. Hints stay hidden until you press `f` — the terminal can't
 collapse them the way the website's `<details>` do, and a hint you didn't ask
-for isn't a hint. On the website the primers are pages under **Course primers**,
-and a stage's note appears in its catalog modal between the instructions and the
-reference-solution spoiler.
+for isn't a hint. On the website every course opens with a primer row in the
+catalog, and a stage's note appears in its catalog modal between the
+instructions and the reference-solution spoiler.
 
 Coverage is partial by design and grows one stage at a time — `just gen` prints
 it (`learn coverage: 10/10 primers, 14/390 stage notes`), and a stage with no
