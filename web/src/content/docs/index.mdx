@@ -25,8 +25,13 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 import AsciinemaPlayer from '../../components/AsciinemaPlayer.astro';
+import { COURSES } from '../../data/catalog';
 
-<AsciinemaPlayer caption="Pick a course, write the stage, save — the official CodeCrafters tester runs locally and every earlier stage re-runs with it. 10 courses, 390 stages, no account." />
+export const courseCount = Object.keys(COURSES).length;
+export const stageCount = Object.values(COURSES).reduce((n, c) => n + c.total, 0);
+export const courseList = Object.values(COURSES).map((c) => c.name.replace(/^Build your own /, ''));
+
+<AsciinemaPlayer caption={`Pick a course, write the stage, save — the official CodeCrafters tester runs locally and every earlier stage re-runs with it. ${courseCount} courses, ${stageCount} stages, no account.`} />
 
 ## What is byox?
 
@@ -36,9 +41,8 @@ checks the real platform runs — entirely on your machine, with stage-by-stage
 progress tracking. No account, no submission queue.
 
 <CardGrid>
-  <Card title="10 courses" icon="puzzle">
-    Redis, Kafka, Git, SQLite, DNS server, HTTP server, BitTorrent, grep,
-    Shell, and a tree-walk Lox Interpreter.
+  <Card title={`${courseCount} courses, ${stageCount} stages`} icon="puzzle">
+    {courseList.slice(0, -1).join(', ')}, and {courseList[courseList.length - 1]}.
   </Card>
   <Card title="Official testers" icon="rocket">
     Every stage is checked by the same open-source tester binaries
