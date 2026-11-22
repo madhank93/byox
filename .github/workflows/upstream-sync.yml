@@ -80,8 +80,13 @@ jobs:
         if: steps.pick.outputs.changed == 'true'
         run: |
           (cd "testers/$COURSE-tester" && go build -o dist/main.out ./cmd/tester)
-          last=$(tail -1 "reference-solutions/stages/$COURSE.tsv" | cut -f1)
-          reference-solutions/verify-local.sh "$COURSE" "$((10#$last))"
+          # The final stage's snapshot is the complete solution; <course>-work can lag it.
+          IFS=$'\t' read -r n slug _ < <(tail -1 "reference-solutions/stages/$COURSE.tsv")
+          work="reference-solutions/$COURSE-work"
+          cp "reference-solutions/$COURSE/$n-$slug/main.go" "$work/app/main.go"
+          # Download modules now: "go: downloading" output during a test breaks PTY-driven testers.
+          (cd "$work" && go build -o /dev/null ./app)
+          reference-solutions/verify-local.sh "$COURSE" "$((10#$n))"
       - name: Record the bump
         if: steps.pick.outputs.changed == 'true' && github.event_name != 'pull_request'
         run: printf '%s %s %s\n' "$COURSE" "${{ steps.pick.outputs.ref }}" "${{ steps.pick.outputs.tref }}" > "bump-$COURSE.txt"
