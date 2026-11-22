@@ -15,6 +15,10 @@ type CourseRef struct {
 	Name       string `yaml:"name"`
 	Repo       string `yaml:"repo"`
 	TesterRepo string `yaml:"tester_repo"`
+	// Ref and TesterRef pin each repo to a commit, so upstream changes reach
+	// learners only after the reference solutions pass against them.
+	Ref       string `yaml:"ref"`
+	TesterRef string `yaml:"tester_ref"`
 }
 
 type Registry struct {

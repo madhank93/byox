@@ -13,6 +13,10 @@ import (
 // single directory name.
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// shaRe is a full commit id. Pins must be exact: a branch or short id could
+// silently move.
+var shaRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
 // scpLikeRe matches git's scp-style remote syntax, "user@host:path".
 var scpLikeRe = regexp.MustCompile(`^[^/@]+@[^/:]+:`)
 
@@ -72,6 +76,11 @@ func (c CourseRef) Validate() error {
 	}
 	if err := validateRepo("tester_repo", c.TesterRepo); err != nil {
 		return fmt.Errorf("course %s: %w", c.Slug, err)
+	}
+	for field, ref := range map[string]string{"ref": c.Ref, "tester_ref": c.TesterRef} {
+		if !shaRe.MatchString(ref) {
+			return fmt.Errorf("course %s: %s %q must be a full 40-character commit id", c.Slug, field, ref)
+		}
 	}
 	return nil
 }

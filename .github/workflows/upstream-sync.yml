@@ -1,0 +1,126 @@
+name: Upstream sync
+
+# Keeps the CodeCrafters forks current and proposes pin bumps in courses.yml.
+# A course's pin moves only when its reference solution passes every stage of
+# the new tester and the upstream stage list still matches stages/<course>.tsv.
+# On a pull request that touches courses.yml, the pins in the PR are checked.
+#
+# Needs secret FORK_SYNC_TOKEN: a fine-grained PAT with Contents and Pull
+# requests read/write on this repo and the forks.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - courses.yml
+      - .github/workflows/upstream-sync.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sync-forks:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync every fork with its CodeCrafters parent
+        env:
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
+        run: |
+          yq -r '.entries[] | [.repo, .tester_repo] | @tsv' courses.yml | tr '\t' '\n' |
+            while read -r url; do gh repo sync "${url#https://github.com/}" </dev/null; done
+
+  check:
+    needs: sync-forks
+    if: always() && (needs.sync-forks.result == 'success' || needs.sync-forks.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        course: [redis, interpreter, git, sqlite, dns-server, http-server, bittorrent, grep, shell, kafka]
+    env:
+      COURSE: ${{ matrix.course }}
+      GOTOOLCHAIN: auto
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Pick the commits to test
+        id: pick
+        run: |
+          entry() { yq -r ".entries[] | select(.slug == \"$COURSE\") | .$1" courses.yml; }
+          repo=$(entry repo); tester=$(entry tester_repo)
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            ref=$(entry ref); tref=$(entry tester_ref)
+          else
+            ref=$(git ls-remote "$repo" HEAD | cut -f1)
+            tref=$(git ls-remote "$tester" HEAD | cut -f1)
+          fi
+          changed=true
+          if [ "${{ github.event_name }}" != pull_request ] && [ "$ref" = "$(entry ref)" ] && [ "$tref" = "$(entry tester_ref)" ]; then
+            changed=false
+          fi
+          { echo "repo=$repo"; echo "tester=$tester"; echo "ref=$ref"; echo "tref=$tref"; echo "changed=$changed"; } >> "$GITHUB_OUTPUT"
+      - name: Check out the course and tester
+        if: steps.pick.outputs.changed == 'true'
+        run: |
+          get() { git init -q "$3" && git -C "$3" fetch -q --depth=1 "$1" "$2" && git -C "$3" checkout -q --detach FETCH_HEAD; }
+          get "${{ steps.pick.outputs.repo }}" "${{ steps.pick.outputs.ref }}" "vendor/$(basename "${{ steps.pick.outputs.repo }}")"
+          get "${{ steps.pick.outputs.tester }}" "${{ steps.pick.outputs.tref }}" "testers/$COURSE-tester"
+      - name: Stage list still matches stages/${{ matrix.course }}.tsv
+        if: steps.pick.outputs.changed == 'true'
+        run: |
+          diff <(yq -r '.stages[].slug' "vendor/$(basename "${{ steps.pick.outputs.repo }}")/course-definition.yml") \
+               <(cut -f2 "reference-solutions/stages/$COURSE.tsv")
+      - name: Reference solution passes every stage
+        if: steps.pick.outputs.changed == 'true'
+        run: |
+          (cd "testers/$COURSE-tester" && go build -o dist/main.out ./cmd/tester)
+          last=$(tail -1 "reference-solutions/stages/$COURSE.tsv" | cut -f1)
+          reference-solutions/verify-local.sh "$COURSE" "$((10#$last))"
+      - name: Record the bump
+        if: steps.pick.outputs.changed == 'true' && github.event_name != 'pull_request'
+        run: printf '%s %s %s\n' "$COURSE" "${{ steps.pick.outputs.ref }}" "${{ steps.pick.outputs.tref }}" > "bump-$COURSE.txt"
+      - if: steps.pick.outputs.changed == 'true' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bump-${{ matrix.course }}
+          path: bump-${{ matrix.course }}.txt
+
+  bump:
+    needs: check
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FORK_SYNC_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bump-*
+          merge-multiple: true
+      - name: Open a pull request for the courses that passed
+        env:
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(bump-*.txt)
+          [ ${#files[@]} -gt 0 ] || { echo "no course to bump"; exit 0; }
+          cat "${files[@]}" | while read -r slug ref tref; do
+            yq -i "(.entries[] | select(.slug == \"$slug\")) |= (.ref = \"$ref\" | .tester_ref = \"$tref\")" courses.yml
+          done
+          rm -f "${files[@]}"
+          git diff --quiet && { echo "pins already current"; exit 0; }
+          branch="upstream-sync/$(date -u +%F)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -qam "chore(courses): bump upstream pins"
+          git push -f origin "$branch"
+          gh pr create --base main --head "$branch" --title "chore(courses): bump upstream pins $(date -u +%F)" \
+            --body "Courses whose upstream moved and whose reference solution passes every stage of the new tester. Review the upstream diffs, then merge." \
+            || echo "a PR for $branch is already open"
