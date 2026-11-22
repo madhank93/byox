@@ -1,41 +1,64 @@
+# Each course runs from a fork of CodeCrafters' public repos, pinned to a commit
+# the reference solutions pass against. .github/workflows/upstream-sync.yml
+# proposes bumps; nothing upstream reaches learners until one is merged.
 entries:
   - slug: redis
     name: Build your own Redis
-    repo: https://github.com/codecrafters-io/build-your-own-redis
-    tester_repo: https://github.com/codecrafters-io/redis-tester
+    repo: https://github.com/madhank93/build-your-own-redis
+    ref: 809d70563f577f96a725e1c8e185e52f60dc3b14
+    tester_repo: https://github.com/madhank93/redis-tester
+    tester_ref: b805ec2ca101d81ef76ea914254ab0ce11652713
   - slug: interpreter
     name: Build your own Interpreter
-    repo: https://github.com/codecrafters-io/build-your-own-interpreter
-    tester_repo: https://github.com/codecrafters-io/interpreter-tester
+    repo: https://github.com/madhank93/build-your-own-interpreter
+    ref: a64ba2e3ac195dd13418f64c03aea360a9878fdf
+    tester_repo: https://github.com/madhank93/interpreter-tester
+    tester_ref: 1c254806993b4998358b54b02c802fd8f6dca333
   - slug: git
     name: Build your own Git
-    repo: https://github.com/codecrafters-io/build-your-own-git
-    tester_repo: https://github.com/codecrafters-io/git-tester
+    repo: https://github.com/madhank93/build-your-own-git
+    ref: 8e8b9e2c9f65580fe55cc0f596adb0493a32a9e3
+    tester_repo: https://github.com/madhank93/git-tester
+    tester_ref: 6d28e97fa23523a0a1f9ab3aa098eddb7f8957cf
   - slug: sqlite
     name: Build your own SQLite
-    repo: https://github.com/codecrafters-io/build-your-own-sqlite
-    tester_repo: https://github.com/codecrafters-io/sqlite-tester
+    repo: https://github.com/madhank93/build-your-own-sqlite
+    ref: 19f45f30f031c2950a4c90bd03d6000cc798f960
+    tester_repo: https://github.com/madhank93/sqlite-tester
+    tester_ref: 93f00c428e8b67266afc296f2299d2d4be5d11a6
   - slug: dns-server
     name: Build your own DNS server
-    repo: https://github.com/codecrafters-io/build-your-own-dns-server
-    tester_repo: https://github.com/codecrafters-io/dns-server-tester
+    repo: https://github.com/madhank93/build-your-own-dns-server
+    ref: 759aff47a39c390637d6bcbdb49a4a4b2ceef3de
+    tester_repo: https://github.com/madhank93/dns-server-tester
+    tester_ref: 8c4ddc239151ad1e2c26a76206067a5214ecdc23
   - slug: http-server
     name: Build your own HTTP server
-    repo: https://github.com/codecrafters-io/build-your-own-http-server
-    tester_repo: https://github.com/codecrafters-io/http-server-tester
+    repo: https://github.com/madhank93/build-your-own-http-server
+    ref: 08ca062ca3327fc97da9dd06a473a48c72ad7936
+    tester_repo: https://github.com/madhank93/http-server-tester
+    tester_ref: c071f344acb9b877b0edf7d3cf49d181f47de805
   - slug: bittorrent
     name: Build your own BitTorrent
-    repo: https://github.com/codecrafters-io/build-your-own-bittorrent
-    tester_repo: https://github.com/codecrafters-io/bittorrent-tester
+    repo: https://github.com/madhank93/build-your-own-bittorrent
+    ref: 81bc7958b79434e982acb477c58eaf097aff5c31
+    tester_repo: https://github.com/madhank93/bittorrent-tester
+    tester_ref: 63c2612dc285c2124d6bd616f64c180ba6760210
   - slug: grep
     name: Build your own grep
-    repo: https://github.com/codecrafters-io/build-your-own-grep
-    tester_repo: https://github.com/codecrafters-io/grep-tester
+    repo: https://github.com/madhank93/build-your-own-grep
+    ref: 1150053d59e08344366f365a3840421523a426c9
+    tester_repo: https://github.com/madhank93/grep-tester
+    tester_ref: 4ee94bdc587814c090bdd365e9096404493bc292
   - slug: shell
     name: Build your own Shell
-    repo: https://github.com/codecrafters-io/build-your-own-shell
-    tester_repo: https://github.com/codecrafters-io/shell-tester
+    repo: https://github.com/madhank93/build-your-own-shell
+    ref: d2c898fc747696ec88083898573f3da3f1f2f5b1
+    tester_repo: https://github.com/madhank93/shell-tester
+    tester_ref: 2735affdeeebd41417a38050da37da10156f3a83
   - slug: kafka
     name: Build your own Kafka
-    repo: https://github.com/codecrafters-io/build-your-own-kafka
-    tester_repo: https://github.com/codecrafters-io/kafka-tester
+    repo: https://github.com/madhank93/build-your-own-kafka
+    ref: ec5c587dce80bef3f6018fb27eba92bea1dfd9d3
+    tester_repo: https://github.com/madhank93/kafka-tester
+    tester_ref: 548089cf5b930d29a57e9fc4f6aa38bae336b158

@@ -7,20 +7,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/madhank93/byox/course"
 )
 
-// Setup clones/updates course + tester repos, builds testers, and seeds
-// Go starters into solutions/. Idempotent; never overwrites solutions.
+// Setup checks out course + tester repos at their pinned commits, builds
+// testers, and seeds Go starters into solutions/. Idempotent; never
+// overwrites solutions.
 func Setup(root string, reg *course.Registry, log io.Writer) error {
 	for _, c := range reg.Entries {
 		fmt.Fprintf(log, "==> %s\n", c.Slug)
-		if err := cloneOrPull(c.Repo, c.VendorDir(root), log); err != nil {
+		if _, err := checkout(c.Repo, c.Ref, c.VendorDir(root), log); err != nil {
 			return err
 		}
-		if err := cloneOrPull(c.TesterRepo, c.TesterDir(root), log); err != nil {
+		moved, err := checkout(c.TesterRepo, c.TesterRef, c.TesterDir(root), log)
+		if err != nil {
 			return err
+		}
+		if moved {
+			// A tester built from the previous commit would grade against old rules.
+			if err := os.Remove(c.TesterBin(root)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 		}
 		if err := buildTester(c, root, log); err != nil {
 			return err
@@ -33,18 +42,41 @@ func Setup(root string, reg *course.Registry, log io.Writer) error {
 	return nil
 }
 
-func cloneOrPull(repo, dir string, log io.Writer) error {
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-		fmt.Fprintf(log, "    %s already cloned\n", filepath.Base(dir))
-		return nil
+// checkout makes dir a shallow checkout of repo at ref, reporting whether it
+// had to move. An existing checkout already at ref is left alone, offline.
+func checkout(repo, ref, dir string, log io.Writer) (bool, error) {
+	if head, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output(); err == nil &&
+		strings.TrimSpace(string(head)) == ref {
+		fmt.Fprintf(log, "    %s at %.10s\n", filepath.Base(dir), ref)
+		return false, nil
 	}
-	fmt.Fprintf(log, "    cloning %s\n", repo)
-	cmd := exec.Command("git", "clone", "--depth=1", repo, dir)
+	fmt.Fprintf(log, "    fetching %s at %.10s\n", repo, ref)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		if err := git(log, "", "init", "-q", dir); err != nil {
+			return false, err
+		}
+		if err := git(log, dir, "remote", "add", "origin", repo); err != nil {
+			return false, err
+		}
+	} else if err := git(log, dir, "remote", "set-url", "origin", repo); err != nil {
+		return false, err
+	}
+	if err := git(log, dir, "fetch", "-q", "--depth=1", "origin", ref); err != nil {
+		return false, fmt.Errorf("fetch %s at %s: %w", repo, ref, err)
+	}
+	if err := git(log, dir, "checkout", "-q", "-f", "--detach", "FETCH_HEAD"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func git(log io.Writer, dir string, args ...string) error {
+	if dir != "" {
+		args = append([]string{"-C", dir}, args...)
+	}
+	cmd := exec.Command("git", args...)
 	cmd.Stdout, cmd.Stderr = log, log
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("clone %s: %w", repo, err)
-	}
-	return nil
+	return cmd.Run()
 }
 
 // EnsureTester builds the tester binary if missing.

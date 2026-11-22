@@ -74,16 +74,30 @@ func TestLoadRegistryRejectsDuplicateSlug(t *testing.T) {
     name: One
     repo: https://github.com/x/y
     tester_repo: https://github.com/x/y-tester
+    ref: 0123456789abcdef0123456789abcdef01234567
+    tester_ref: 0123456789abcdef0123456789abcdef01234567
   - slug: redis
     name: Two
     repo: https://github.com/x/z
     tester_repo: https://github.com/x/z-tester
+    ref: 0123456789abcdef0123456789abcdef01234567
+    tester_ref: 0123456789abcdef0123456789abcdef01234567
 `
 	if err := os.WriteFile(filepath.Join(dir, "courses.yml"), []byte(yml), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadRegistry(dir); err == nil {
 		t.Fatal("LoadRegistry accepted two courses with the same slug")
+	}
+}
+
+func TestValidateRejectsMovableRef(t *testing.T) {
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	for _, ref := range []string{"", "main", "0123456"} {
+		c := CourseRef{Slug: "redis", Repo: "https://github.com/x/y", TesterRepo: "https://github.com/x/y-tester", Ref: ref, TesterRef: sha}
+		if err := c.Validate(); err == nil {
+			t.Errorf("Validate accepted ref %q", ref)
+		}
 	}
 }
 
