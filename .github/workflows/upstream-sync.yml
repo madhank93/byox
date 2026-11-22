@@ -86,7 +86,11 @@ jobs:
           cp "reference-solutions/$COURSE/$n-$slug/main.go" "$work/app/main.go"
           # Download modules now: "go: downloading" output during a test breaks PTY-driven testers.
           (cd "$work" && go build -o /dev/null ./app)
-          reference-solutions/verify-local.sh "$COURSE" "$((10#$n))"
+          compgen -c | grep '^exi' | sort -u | xargs -r -n1 sh -c 'echo "$0 -> $(command -v "$0")"'
+          # The runner's PATH carries tools CodeCrafters' clean image lacks, and
+          # extra executables change what the shell course's tab completion sees.
+          PATH="$(dirname "$(command -v go)"):/usr/sbin:/usr/bin:/sbin:/bin" \
+            reference-solutions/verify-local.sh "$COURSE" "$((10#$n))"
       - name: Record the bump
         if: steps.pick.outputs.changed == 'true' && github.event_name != 'pull_request'
         run: printf '%s %s %s\n' "$COURSE" "${{ steps.pick.outputs.ref }}" "${{ steps.pick.outputs.tref }}" > "bump-$COURSE.txt"
